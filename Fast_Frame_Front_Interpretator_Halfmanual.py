@@ -54,6 +54,8 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
 
     def get_polynomes(self, image_before, image_shot):
         self.Choose_control_points(image_before)
+        self.tilt_before_list = []
+        self.shift_before_list = []
         print('image_before')
         polynomes_before = self.my_fitting(image_before, 1)
         print('image_shot')
@@ -95,7 +97,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         w_image = image_array.shape[1]
         h_image = image_array.shape[0]
 
-        w_front = 120
+        w_front = 150
         x_center = np.arange(w_image, dtype='int')
         b = y_0
         a = (y_1 - b) / w_image
@@ -108,7 +110,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         y_down = np.where(y_down > h_image, h_image, y_down)
         ax[0].plot(x_center, y_up)
         ax[0].plot(x_center, y_down)
-        w_smooth = 20
+        w_smooth = 25
         profiles_values = []
         profiles_x = x_center[w_smooth:-w_smooth]
         for x in profiles_x:
@@ -151,17 +153,22 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 self.shift_before = poly_coef[1]
                 self.poly_y = poly_func(x_center)
             else:
-                def f_bi_sq(t, t0, al, bl):
-                    cl = 2 * al * t0
-                    dl = al * t0 ** 2.0 + bl - cl * t0
+                tilt_before = self.tilt_before_list[0]
+                shift_before = self.shift_before_list[0]
+
+                def f_bi_sq(t, t0):
+                    al = tilt_before / (2.0 * t0)
+                    cl = tilt_before * 1.0
+                    dl = shift_before * 1.0
+                    bl = dl + t0 * cl / 2.0
                     yl = np.where(t > t0, cl * t + dl, al * t ** 2.0 + bl)
                     return yl
 
                 popt, perr = curve_fit(f_bi_sq, front_list_x, front_list_y,
-                                       bounds=([1, -1000, 0], [w_image, 1000, 1000]))
-                t0, al, bl = popt
+                                       bounds=([1, ], [w_image*0.75, ]))
+                t0 = popt
                 print(t0)
-                self.poly_y = f_bi_sq(x_center, t0, al, bl)
+                self.poly_y = f_bi_sq(x_center, t0)
 
             self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
             self.plot_level, = ax[1].plot([0, 2 * w_front], [front_level, front_level], '-or')
@@ -171,6 +178,12 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
         # ax[0].imshow(image_array)
         plt.show()
+        if poly_power == 1:
+            self.tilt_before_list.append(self.tilt_before)
+            self.shift_before_list.append(self.shift_before)
+        else:
+            self.tilt_before_list.pop(0)
+            self.shift_before_list.pop(0)
         return np.array([x_center, self.poly_y])
 
     def contrast(self, image_array):
