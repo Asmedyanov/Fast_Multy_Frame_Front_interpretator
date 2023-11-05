@@ -12,11 +12,17 @@ from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
 
 class Fast_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
-        self.dy = 0.71839e-3  # 0.007092  # mm
-        self.dx = 2.41935e-3  # 0.028571  # mm
+        self.dy = 3.9e-3  # 0.007092  # mm
+        self.dx = 3.9e-3  # 0.028571  # mm
+        self.init_tilt_list = [0, -0.02103, -0.00424, -0.03171]
+        self.h_foil = 15e-3  # mm
+        self.waist = 4.0  # mm
+        self.w_foil = 40.0  # mm
+        self.l_foil = 25.0  # mm
 
-        self.shot_name, self.before_array, self.shot_array = open_images()
-
+        self.shot_name, self.before_array, self.shot_array, self.peak_times, current_time, current_amp = open_images()
+        self.starts = self.peak_times[::2]
+        self.stops = self.peak_times[1::2]
         self.before_array = self.get_norm_array(self.before_array)
         self.shot_array = self.get_norm_array(self.shot_array)
 
@@ -29,11 +35,12 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.before_array = np.abs(ifft2(self.before_array_specter))
         self.shot_array = np.abs(ifft2(self.shot_array_specter))
 
-        self.before_array = self.contrast(self.before_array)
-        self.shot_array = self.contrast(self.shot_array)
+        '''self.before_array = self.contrast(self.before_array)
+        self.shot_array = self.contrast(self.shot_array)'''
 
         self.before_array = self.get_norm_array(self.before_array)
         self.shot_array = self.get_norm_array(self.shot_array)
+        # self.show_original()
 
         self.before_array = np.swapaxes(self.before_array, 1, 2)
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
@@ -47,10 +54,90 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.shot_array = self.shot_array.reshape(2 * n_image, h_image // 2, w_image)
         # self.show_original_half()
         polynomes_list = []
-        for i in range(2 * n_image):
-            print(f'image {i + 1} of {2 * n_image}')
+        self.min_len = w_image
+        for i in range(n_image):
+            print(f'image {i + 1} of {n_image}')
             polynomes = self.get_polynomes(self.before_array[i], self.shot_array[i])
             polynomes_list.append(polynomes)
+        norm_before_x = polynomes_list[0][0][0]
+        norm_before_y = -polynomes_list[0][0][1] + polynomes_list[0][0][1][0]
+        norm = (polynomes_list[0][0][1][0] - polynomes_list[0][0][1][10]) * self.dy
+        cross_section = self.cross_section(norm_before_x[:self.min_len] * self.dx)  # mm^2
+        polynomes_list_aligned = [[norm_before_x[:self.min_len] * self.dx, norm_before_y[:self.min_len] * self.dy]]
+        for polynomes in polynomes_list:
+            # x_plot0 = polynomes[0][0] * self.dx
+            y_plot0 = polynomes[0][1] * self.dy
+            shift = y_plot0[0]
+            tilt = y_plot0[10] - y_plot0[0]
+            y_plot0 -= shift
+            y_plot0 *= norm / tilt
+            # plt.plot(x_plot0, y_plot0)
+            x_plot1 = polynomes[1][0] * self.dx
+            y_plot1 = polynomes[1][1] * self.dy
+            y_plot1 -= shift
+            y_plot1 *= norm / tilt
+            polynomes_list_aligned.append(np.array([x_plot1[:self.min_len], y_plot1[:self.min_len]]))
+            # plt.plot(x_plot1, y_plot1)
+        polinomes_array = np.array(polynomes_list_aligned)
+        SSW_dep = polinomes_array[:, 1] - polinomes_array[0, 1]
+        # points_
+        origins_list = []
+        currents_list = []
+        # cross_section_list = []
+        current_density_list = []
+        action_list = []
+        dt_current = np.gradient(current_time).mean()
+        for i, dep in enumerate(SSW_dep.transpose()):
+            time = np.insert(self.starts, 0, 0)
+            poly_coef = np.polyfit(time[1:], dep[1:], 1)
+
+            poly_func = np.poly1d(poly_coef)
+            time_reg = np.arange(0, time.max(), time.max() / 100.0)
+            dep_reg = poly_func(time_reg)
+            dep_reg = np.where(dep_reg < 0, 0, dep_reg)
+            origin = -poly_coef[1] / poly_coef[0]
+            current = np.interp(origin, current_time, current_amp)
+            current_density = current / cross_section[i] * 1.0e2
+            if (origin > 0):
+                try:
+                    if len(origins_list) > 0:
+                        if origin < origins_list[-1]:
+                            continue
+                        if origin > current_time[np.argmax(current_amp)]:
+                            continue
+
+                        if current_density < current_density_list[-1]:
+                            continue
+                    origins_list.append(origin)
+                    currents_list.append(current)
+                    current_density_list.append(current_density)
+                    args_to_int = np.argwhere((current_time > 0) & (current_time <= origin))
+                    action = np.sum(current_amp[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
+                    action_list.append(action)
+                except Exception as ex:
+                    print(ex)
+            if i % 20 == 0:
+                plt.plot(time, dep, 'o')
+                plt.plot(time_reg, dep_reg)
+        current_density_array = np.array(current_density_list)
+        action_array = np.array(action_list)
+
+        '''for polynome in polynomes_list_aligned:
+            plt.plot(polynome[0], polynome[1])'''
+        plt.show()
+        plt.plot(current_time, current_amp)
+        plt.plot(origins_list, currents_list, 'o')
+        plt.show()
+        plt.plot(current_density_array * 1.0e-8, action_array * 1.0e-9, '-o')
+        plt.grid()
+        plt.xlabel('$j, x10^8 A/cm^2$')
+        plt.ylabel('$h, x10^9 A^2s/cm^4$')
+        plt.title('Action integral')
+        plt.show()
+
+    def cross_section(self, z):
+        s = self.waist + (self.w_foil - self.waist) * z / self.l_foil
+        return 2 * s * self.h_foil
 
     def get_polynomes(self, image_before, image_shot):
         self.Choose_control_points(image_before)
@@ -62,7 +149,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         polynomes_shot = self.my_fitting(image_shot, 2)
         # print(polynomes_before)
 
-        x0 = polynomes_before[0][0]
+        '''x0 = polynomes_before[0][0]
         y0 = polynomes_before[0][1]
         x1 = polynomes_before[1][0]
         y1 = polynomes_before[1][1]
@@ -72,10 +159,10 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         y0 = polynomes_shot[0][1]
         x1 = polynomes_shot[1][0]
         y1 = polynomes_shot[1][1]
-        plt.plot(x0, y0)
+        plt.plot(x0, y0)'''
         # plt.plot(x1, y1)
 
-        plt.show()
+        # plt.show()
         return [polynomes_before, polynomes_shot]
 
     def my_fitting(self, image_array, poly_power=1):
@@ -85,10 +172,10 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         print('image_left')
         left_poly = self.get_profile_half_manual(array_left, self.transit_point[1],
                                                  self.start_point[1], poly_power)
-        print('image_right')
+        '''print('image_right')
         right_poly = self.get_profile_half_manual(array_right, self.transit_point[1],
-                                                  self.finish_point[1], poly_power)
-        return [left_poly, right_poly]
+                                                  self.finish_point[1], poly_power)'''
+        return left_poly#right_poly
 
     def get_profile_half_manual(self, image_array, y_0, y_1, poly_power=1):
         fig, ax = plt.subplots(1, 3)
@@ -110,7 +197,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         y_down = np.where(y_down > h_image, h_image, y_down)
         ax[0].plot(x_center, y_up)
         ax[0].plot(x_center, y_down)
-        w_smooth = 25
+        w_smooth = 15
         profiles_values = []
         profiles_x = x_center[w_smooth:-w_smooth]
         for x in profiles_x:
@@ -165,7 +252,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                     return yl
 
                 popt, perr = curve_fit(f_bi_sq, front_list_x, front_list_y,
-                                       bounds=([1, ], [w_image*0.75, ]))
+                                       bounds=([1, ], [w_image * 0.75, ]))
                 t0 = popt
                 print(t0)
                 self.poly_y = f_bi_sq(x_center, t0)
@@ -180,10 +267,12 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         plt.show()
         if poly_power == 1:
             self.tilt_before_list.append(self.tilt_before)
+            print(f'image_tilt = {np.arctan(self.tilt_before)} rad')
             self.shift_before_list.append(self.shift_before)
         else:
             self.tilt_before_list.pop(0)
             self.shift_before_list.pop(0)
+        if x_center.size < self.min_len: self.min_len = x_center.size
         return np.array([x_center, self.poly_y])
 
     def contrast(self, image_array):
@@ -603,6 +692,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         fig, ax = plt.subplots(2, 4)
         for i in range(4):
             ax[0, i].imshow(self.before_array[i])
+            ax[0, i].set_title(f'from {int(self.starts[i] * 1000)} ns to {int(self.stops[i] * 1000)} ns')
             ax[1, i].imshow(self.shot_array[i])
         plt.show()
 
