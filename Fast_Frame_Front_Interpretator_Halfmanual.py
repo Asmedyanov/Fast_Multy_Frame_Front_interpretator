@@ -12,28 +12,31 @@ from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
 
 class Fast_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
-        self.dy = 3.9e-3  # 0.007092  # mm
-        self.dx = 3.9e-3  # 0.028571  # mm
-        self.init_tilt_list = [0, -0.02103, -0.00424, -0.03171]
-        self.h_foil = 15e-3  # mm
-        self.waist = 4.0  # mm
-        self.w_foil = 40.0  # mm
-        self.l_foil = 25.0  # mm
-
-        self.shot_name, self.before_array, self.shot_array, self.peak_times, current_time, current_amp = open_images()
+        self.data_dict = open_folder()
+        self.sort_data_dict()
         self.starts = self.peak_times[::2]
         self.stops = self.peak_times[1::2]
+        try:
+            os.mkdir('common')
+        except Exception as ex:
+            print(ex)
+        self.save_all_images('common/0.original.png')
+        self.shape = self.before_array.shape
         self.before_array = self.get_norm_array(self.before_array)
         self.shot_array = self.get_norm_array(self.shot_array)
+        self.save_all_images('common/1.normed.png')
 
         self.before_array_specter = fft2(self.before_array)
         self.shot_array_specter = fft2(self.shot_array)
+        self.save_all_images_specter('common/2.fft2_original.png')
 
         self.before_array_specter = self.clean_picks(self.before_array_specter)
         self.shot_array_specter = self.clean_picks(self.shot_array_specter)
+        self.save_all_images_specter('common/3.fft_cut.png')
 
         self.before_array = np.abs(ifft2(self.before_array_specter))
         self.shot_array = np.abs(ifft2(self.shot_array_specter))
+        self.save_all_images('common/4.filtered.png')
 
         '''self.before_array = self.contrast(self.before_array)
         self.shot_array = self.contrast(self.shot_array)'''
@@ -44,15 +47,327 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
 
         self.before_array = np.swapaxes(self.before_array, 1, 2)
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
+        self.save_all_images('common/5.swapped.png')
         # self.show_original()
-        n_image, h_image, w_image = self.before_array.shape
-        self.before_array = np.array(np.split(self.before_array, 2, 1))
-        self.before_array[1] = np.flip(self.before_array[1], axis=1)
-        self.before_array = self.before_array.reshape(2 * n_image, h_image // 2, w_image)
-        self.shot_array = np.array(np.split(self.shot_array, 2, 1))
-        self.shot_array[1] = np.flip(self.shot_array[1], axis=1)
-        self.shot_array = self.shot_array.reshape(2 * n_image, h_image // 2, w_image)
-        # self.show_original_half()
+        # n_image, h_image, w_image = self.before_array.shape
+        # self.before_array = np.array(np.split(self.before_array, 2, 1))
+        # self.before_array[1] = np.flip(self.before_array[1], axis=1)
+        # self.before_array = self.before_array.reshape(2 * n_image, h_image // 2, w_image)
+        # self.shot_array = np.array(np.split(self.shot_array, 2, 1))
+        # self.shot_array[1] = np.flip(self.shot_array[1], axis=1)
+        # self.shot_array = self.shot_array.reshape(2 * n_image, h_image // 2, w_image)
+        # self.save_original_half('common/6.halfs.png')
+        for i in range(1):
+            self.consider_quart(i)
+
+    def consider_quart(self, quart_ind):
+        try:
+            os.mkdir(f'quart{quart_ind}')
+        except:
+            pass
+        if quart_ind in [0, 1]:
+            self.before_half = self.before_array[:, :self.shape[1] // 2]
+            self.shot_half = self.shot_array[:, :self.shape[1] // 2]
+        else:
+            self.before_half = self.before_array[:, self.shape[1] // 2:]
+            self.before_half = np.flip(self.before_half, axis=1)
+            self.shot_half = self.shot_array[:, self.shape[1] // 2:]
+            self.shot_half = np.flip(self.shot_half, axis=1)
+        self.consider_half(quart_ind)
+
+    def consider_half(self, quart_ind):
+        a_list = []
+        b_list = []
+        t0_list = []
+        for i in range(self.shape[0]):
+            self.get_center_of_image(self.before_half[i])
+            if quart_ind in [0, 3]:
+                self.before_quart = self.before_half[i, :, self.center[0]:]
+                self.shot_quart = self.shot_half[i, :, self.center[0]:]
+            else:
+                self.before_quart = self.before_half[i, :, :self.center[0]]
+                self.before_quart = np.flip(self.before_quart, axis=1)
+                self.shot_quart = self.shot_half[i, :, :self.center[0]]
+                self.shot_quart = np.flip(self.shot_quart, axis=1)
+            self.get_end_of_front(self.before_quart)
+            a, b = self.get_line_regration(self.before_quart)
+            t0 = self.get_sq_line_regration(self.shot_quart, a, b)
+            a_list.append(a)
+            b_list.append(b)
+            t0_list.append(t0)
+        study_range = np.arange(np.max(t0_list))
+        polynomes_before_list = []
+        polynomes_shot_list = []
+        for i in range(self.shape[0]):
+            polynome_before = a_list[i] * study_range + b_list[i]
+
+            def my_func(t, t0):
+                al = a_list[i] / (2.0 * t0)
+                cl = a_list[i] * 1.0
+                dl = b_list[i] * 1.0
+                bl = dl + t0 * cl / 2.0
+                yl = np.where(t > t0, cl * t + dl, al * t ** 2.0 + bl)
+                return yl
+
+            polynome_shot = my_func(study_range, t0_list[i])
+            polynomes_before_list.append(polynome_before)
+            polynomes_shot_list.append(polynome_shot)
+        main_tilt = a_list[0]
+        # main_shift = polynomes_before_list[0][0]
+        for i in range(self.shape[0]):
+            polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
+            polynomes_shot_list[i] *= main_tilt / a_list[i]
+            polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
+        for poly in polynomes_shot_list:
+            plt.plot(study_range, poly)
+        plt.plot(study_range, polynomes_before_list[0])
+        plt.savefig(f'quart{quart_ind}/0.profiles.png')
+        plt.show()
+
+        polynome_shot_array = np.array(polynomes_shot_list)
+        SSW_dep = polynome_shot_array[:, 1] - polynomes_before_list[0]
+
+        origins_list = []
+        currents_list = []
+        # cross_section_list = []
+        current_density_list = []
+        action_list = []
+        dt_current = np.gradient(self.wf_time).mean()
+        cross_section = self.cross_section(study_range * self.dx)
+        for i, dep in enumerate(SSW_dep.transpose()):
+            # time = np.insert(self.starts, 0, 0)
+            poly_coef = np.polyfit(self.starts, dep, 1)
+
+            poly_func = np.poly1d(poly_coef)
+            time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
+            dep_reg = poly_func(time_reg)
+            dep_reg = np.where(dep_reg < 0, 0, dep_reg)
+            origin = -poly_coef[1] / poly_coef[0]
+            current = np.interp(origin, self.wf_time, self.current)
+            current_density = current / cross_section[i] * 1.0e2
+            if (origin > 0):
+                try:
+                    if len(origins_list) > 0:
+                        if origin < origins_list[-1]:
+                            continue
+                        if origin > self.wf_time[np.argmax(self.current)]:
+                            continue
+
+                        if current_density < current_density_list[-1]:
+                            continue
+                    origins_list.append(origin)
+                    currents_list.append(current)
+                    current_density_list.append(current_density)
+                    args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= origin))
+                    action = np.sum(self.current[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
+                    action_list.append(action)
+                except Exception as ex:
+                    print(ex)
+            if i % 20 == 0:
+                plt.plot(self.starts, dep, 'o')
+                plt.plot(time_reg, dep_reg)
+        current_density_array = np.array(current_density_list)
+        action_array = np.array(action_list)
+        plt.savefig(f'quart{quart_ind}/1.time_reg.png')
+        plt.show()
+        plt.plot(self.wf_time, self.current)
+        plt.plot(origins_list, currents_list, 'o')
+        plt.savefig(f'quart{quart_ind}/2.current.png')
+        plt.show()
+        plt.plot(current_density_array * 1.0e-8, action_array * 1.0e-9, '-o')
+        plt.grid()
+        plt.xlabel('$j, x10^8 A/cm^2$')
+        plt.ylabel('$h, x10^9 A^2s/cm^4$')
+        plt.title('Action integral')
+        plt.savefig(f'quart{quart_ind}/3.action_integral.png')
+        plt.show()
+
+    def get_sq_line_regration(self, image_array, a, b):
+        image_process = image_array[:, :self.end[0]]
+        h_image, w_image = image_process.shape
+        fig, ax = plt.subplots(1, 3)
+        ax[0].imshow(image_process)
+        ax[2].imshow(image_process)
+        x_center = np.arange(w_image, dtype='int')
+        b_center = self.center[1]
+        a_center = (self.end[1] - b_center) / w_image
+        y_center = a_center * x_center + b_center
+        y_center = y_center.astype(int)
+        ax[0].plot(x_center, y_center)
+        y_up = y_center - self.w_front
+        y_up = np.where(y_up < 0, 0, y_up)
+        y_down = y_center + self.w_front
+        y_down = np.where(y_down >= h_image, h_image - 1, y_down)
+        ax[0].plot(x_center, y_up)
+        ax[0].plot(x_center, y_down)
+        profiles_values = []
+        profiles_x = x_center[self.w_smooth:-self.w_smooth]
+        for x in profiles_x:
+            profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            profile -= profile.min()
+            profile /= profile.mean()
+            if x % 100 == 5:
+                ax[1].plot(profile)
+            profiles_values.append(profile)
+        plt.draw()
+        self.t0_loc = 0
+
+        def mouse_event_front_level(event):
+            try:
+                self.plot_front.remove()
+                self.plot_poly.remove()
+                self.plot_level.remove()
+            except Exception as ex:
+                pass
+            x, y = event.xdata, event.ydata
+            front_level = y
+            front_list_x = []
+            front_list_y = []
+            for i in range(len(profiles_values)):
+                try:
+                    front_y = np.argwhere(profiles_values[i] > front_level).max()
+                    front_y += y_up[profiles_x[i]]
+                    front_x = profiles_x[i]
+                    front_list_x.append(front_x)
+                    front_list_y.append(front_y)
+                except Exception as ex:
+                    pass  # print(ex)
+
+            def f_bi_sq(t, t0):
+                al = a / (2.0 * t0)
+                cl = a * 1.0
+                dl = b * 1.0
+                bl = dl + t0 * cl / 2.0
+                yl = np.where(t > t0, cl * t + dl, al * t ** 2.0 + bl)
+                return yl
+
+            popt, perr = curve_fit(f_bi_sq, front_list_x, front_list_y,
+                                   bounds=([1, ], [w_image * 0.75, ]))
+            self.t0_loc = popt
+            # print(t0)
+            self.poly_y = f_bi_sq(x_center, self.t0_loc)
+
+            self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
+            self.plot_level, = ax[1].plot([0, 2 * self.w_front], [front_level, front_level], '-or')
+            self.plot_poly, = ax[2].plot(x_center, self.poly_y, 'r')
+            plt.draw()
+
+        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
+
+        plt.show()
+        return self.t0_loc
+
+    def get_line_regration(self, image_array):
+        image_process = image_array[:, :self.end[0]]
+        h_image, w_image = image_process.shape
+        fig, ax = plt.subplots(1, 3)
+        ax[0].imshow(image_process)
+        ax[2].imshow(image_process)
+        x_center = np.arange(w_image, dtype='int')
+        b_center = self.center[1]
+        a_center = (self.end[1] - b_center) / w_image
+        y_center = a_center * x_center + b_center
+        y_center = y_center.astype(int)
+        ax[0].plot(x_center, y_center)
+        y_up = y_center - self.w_front
+        y_up = np.where(y_up < 0, 0, y_up)
+        y_down = y_center + self.w_front
+        y_down = np.where(y_down >= h_image, h_image - 1, y_down)
+        ax[0].plot(x_center, y_up)
+        ax[0].plot(x_center, y_down)
+        profiles_values = []
+        profiles_x = x_center[self.w_smooth:-self.w_smooth]
+        for x in profiles_x:
+            profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            profile -= profile.min()
+            profile /= profile.mean()
+            if x % 100 == 5:
+                ax[1].plot(profile)
+            profiles_values.append(profile)
+        plt.draw()
+        poly_coef = np.array([a_center, b_center])
+
+        def mouse_event_front_level(event):
+            try:
+                self.plot_front.remove()
+                self.plot_poly.remove()
+                self.plot_level.remove()
+            except Exception as ex:
+                pass
+            x, y = event.xdata, event.ydata
+            front_level = y
+            front_list_x = []
+            front_list_y = []
+            for i in range(len(profiles_values)):
+                try:
+                    front_y = np.argwhere(profiles_values[i] > front_level).max()
+                    front_y += y_up[profiles_x[i]]
+                    front_x = profiles_x[i]
+                    front_list_x.append(front_x)
+                    front_list_y.append(front_y)
+                except Exception as ex:
+                    pass  # print(ex)
+            poly_coef = np.polyfit(front_list_x, front_list_y, 1)
+            poly_func = np.poly1d(poly_coef)
+            self.tilt_before = poly_coef[0]
+            self.shift_before = poly_coef[1]
+            self.poly_y = poly_func(x_center)
+
+            self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
+            self.plot_level, = ax[1].plot([0, 2 * self.w_front], [front_level, front_level], '-or')
+            self.plot_poly, = ax[2].plot(x_center, self.poly_y, 'r')
+            plt.draw()
+
+        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
+
+        plt.show()
+        return poly_coef
+
+    def get_end_of_front(self, image_array):
+        fig = plt.figure()
+        plt.imshow(image_array)
+        plt.title('Choose the end of front. Close to continue')
+        shape = image_array.shape
+        self.end = [shape[0] - 1, shape[1] - 1]
+
+        def mouse_event_end(event):
+            try:
+                self.annotate.remove()
+                self.arrow.remove()
+            except:
+                pass
+            x, y = event.xdata, event.ydata
+            self.end = [int(x), int(y)]
+            self.annotate = plt.annotate('front end', xy=(x, y), xytext=(x + 100, y + 100),
+                                         arrowprops=dict(facecolor='red', shrink=0.05))
+            self.arrow = plt.arrow(0, self.center[1], x, y - self.center[1])
+            plt.draw()
+
+        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_end)
+        plt.show()
+
+    def get_center_of_image(self, image_array):
+        fig = plt.figure()
+        plt.imshow(image_array)
+        plt.title('Choose the butterfly center. Close to continue')
+        shape = image_array.shape
+        self.center = [shape[0] // 2, shape[1] // 2]
+
+        def mouse_event_center(event):
+            try:
+                self.arrow.remove()
+            except:
+                pass
+            x, y = event.xdata, event.ydata
+            self.center = [int(x), int(y)]
+            self.arrow = plt.annotate('butterfly_waist', xy=(x, y), xytext=(x + 100, y - 100),
+                                      arrowprops=dict(facecolor='red', shrink=0.05))
+            plt.draw()
+
+        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_center)
+        plt.show()
+
+    def trash(self):
         polynomes_list = []
         self.min_len = w_image
         for i in range(n_image):
@@ -86,7 +401,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         # cross_section_list = []
         current_density_list = []
         action_list = []
-        dt_current = np.gradient(current_time).mean()
+        dt_current = np.gradient(self.wf_time).mean()
         for i, dep in enumerate(SSW_dep.transpose()):
             time = np.insert(self.starts, 0, 0)
             poly_coef = np.polyfit(time[1:], dep[1:], 1)
@@ -96,14 +411,14 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
             dep_reg = poly_func(time_reg)
             dep_reg = np.where(dep_reg < 0, 0, dep_reg)
             origin = -poly_coef[1] / poly_coef[0]
-            current = np.interp(origin, current_time, current_amp)
+            current = np.interp(origin, self.wf_time, self.current)
             current_density = current / cross_section[i] * 1.0e2
             if (origin > 0):
                 try:
                     if len(origins_list) > 0:
                         if origin < origins_list[-1]:
                             continue
-                        if origin > current_time[np.argmax(current_amp)]:
+                        if origin > self.wf_time[np.argmax(self.current)]:
                             continue
 
                         if current_density < current_density_list[-1]:
@@ -111,8 +426,8 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                     origins_list.append(origin)
                     currents_list.append(current)
                     current_density_list.append(current_density)
-                    args_to_int = np.argwhere((current_time > 0) & (current_time <= origin))
-                    action = np.sum(current_amp[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
+                    args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= origin))
+                    action = np.sum(self.current[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
                     action_list.append(action)
                 except Exception as ex:
                     print(ex)
@@ -125,7 +440,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         '''for polynome in polynomes_list_aligned:
             plt.plot(polynome[0], polynome[1])'''
         plt.show()
-        plt.plot(current_time, current_amp)
+        plt.plot(self.wf_time, self.current)
         plt.plot(origins_list, currents_list, 'o')
         plt.show()
         plt.plot(current_density_array * 1.0e-8, action_array * 1.0e-9, '-o')
@@ -134,6 +449,44 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         plt.ylabel('$h, x10^9 A^2s/cm^4$')
         plt.title('Action integral')
         plt.show()
+
+    def save_all_images(self, name):
+        fig, ax = plt.subplots(2, 4)
+        fig.set_size_inches(11.7, 8.3)
+        for i in range(4):
+            ax[0, i].imshow(self.before_array[i])
+            ax[0, i].set_title(f'from {int(self.starts[i] * 1000)} ns to {int(self.stops[i] * 1000)} ns')
+            ax[1, i].imshow(self.shot_array[i])
+        plt.tight_layout()
+        fig.savefig(name)
+        plt.close()
+
+    def save_all_images_specter(self, name):
+        fig, ax = plt.subplots(2, 4)
+        fig.set_size_inches(11.7, 8.3)
+        for i in range(4):
+            ax[0, i].imshow(np.log(np.abs(self.before_array_specter[i])))
+            ax[0, i].set_title(f'from {int(self.starts[i] * 1000)} ns to {int(self.stops[i] * 1000)} ns')
+            ax[1, i].imshow(np.log(np.abs(self.shot_array_specter[i])))
+        plt.tight_layout()
+        fig.savefig(name)
+        plt.close()
+
+    def sort_data_dict(self):
+        self.dy = self.data_dict['info']['Value']['dy']
+        self.dx = self.data_dict['info']['Value']['dx']
+        self.h_foil = self.data_dict['info']['Value']['Thickness']
+        self.waist = self.data_dict['info']['Value']['Waist']
+        self.w_foil = self.data_dict['info']['Value']['Width']
+        self.l_foil = self.data_dict['info']['Value']['Length']
+        self.w_front = self.data_dict['info']['Value']['w_front']
+        self.w_smooth = self.data_dict['info']['Value']['w_smooth']
+        # self.shot_name, self.before_array, self.shot_array, self.peak_times, self.wf_time, self.current = open_images()
+        self.before_array = self.data_dict['before']
+        self.shot_array = self.data_dict['shot']
+        self.peak_times = self.data_dict['waveform']['peaks']
+        self.wf_time = self.data_dict['waveform']['time']
+        self.current = self.data_dict['waveform']['current']
 
     def cross_section(self, z):
         s = self.waist + (self.w_foil - self.waist) * z / self.l_foil
@@ -149,20 +502,6 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         polynomes_shot = self.my_fitting(image_shot, 2)
         # print(polynomes_before)
 
-        '''x0 = polynomes_before[0][0]
-        y0 = polynomes_before[0][1]
-        x1 = polynomes_before[1][0]
-        y1 = polynomes_before[1][1]
-        plt.plot(x0, y0)
-        # plt.plot(x1, y1)
-        x0 = polynomes_shot[0][0]
-        y0 = polynomes_shot[0][1]
-        x1 = polynomes_shot[1][0]
-        y1 = polynomes_shot[1][1]
-        plt.plot(x0, y0)'''
-        # plt.plot(x1, y1)
-
-        # plt.show()
         return [polynomes_before, polynomes_shot]
 
     def my_fitting(self, image_array, poly_power=1):
@@ -175,7 +514,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         '''print('image_right')
         right_poly = self.get_profile_half_manual(array_right, self.transit_point[1],
                                                   self.finish_point[1], poly_power)'''
-        return left_poly#right_poly
+        return left_poly  # right_poly
 
     def get_profile_half_manual(self, image_array, y_0, y_1, poly_power=1):
         fig, ax = plt.subplots(1, 3)
@@ -684,8 +1023,24 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
 
         plt.show()
 
+    def save_original_half(self, name):
+        try:
+            shape = self.before_array.shape
+            fig, ax = plt.subplots(2 * shape[0], shape[1])
+            manager = plt.get_current_fig_manager()
+            manager.full_screen_toggle()
+            for i in range(shape[1]):
+                ax[0, i].imshow(self.before_array[i])
+                ax[2, i].imshow(self.before_array[i + shape[1] - 1])
+                ax[1, i].imshow(self.shot_array[i])
+                ax[3, i].imshow(self.shot_array[i + shape[1] - 1])
+
+            fig.savefig(name)
+        except Exception as ex:
+            print(ex)
+        plt.close()
+
     def show_original(self):
-        shape = self.before_array.shape
         plt.imshow(self.before_array[0])
         plt.show()
         plt.clf()
