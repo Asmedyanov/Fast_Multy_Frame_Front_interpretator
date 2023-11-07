@@ -8,7 +8,9 @@ from scipy.signal import find_peaks
 
 
 def open_xlsx(fname):
-    data = pd.read_excel(fname, index_col='Parameter')
+    #data = pd.read_excel(fname, index_col='Parameter')
+    data = pd.read_excel(fname)
+    data = data.set_index('Parameter')
     return data
 
 
@@ -31,10 +33,12 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     waveform = pd.read_csv(fname)
     sinc_time = waveform['s.1'].values * 1.0e6
     sinc_volt = np.abs(np.gradient(waveform['Volts.1']))
-    peaks = find_peaks(sinc_volt, prominence=0.1)[0]
+    if sinc_volt.max()<10.0*sinc_volt.mean():
+        sinc_volt = np.abs(np.gradient(waveform['Volts.2']))
+    peaks = find_peaks(sinc_volt[:sinc_volt.size//2], prominence=0.1)[0]
     peaks = peaks[-8:]
     peak_times = sinc_time[peaks]
-    current_volt = waveform['Volts.2'].values
+    current_volt = waveform['Volts'].values
     current_amp = current_volt * Rogovski_ampl
     n_conv = Rogovski_conv
     a_conv = np.ones(n_conv) / float(n_conv)
@@ -57,7 +61,7 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
 
 
 def open_folder():
-    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Documents/Fast_Frame_Front_interpretator/Shot25')
+    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing')
     current_dir = os.curdir
     os.chdir(folder_name)
     files_data = dict()
@@ -71,7 +75,7 @@ def open_folder():
                 files_data['shot'] = data
             continue
         if fname.split('.')[-1] == 'csv':
-            files_data['waveform'] = open_csv(fname, files_data['info']['Value']['Rogovski_ampl'],
+            files_data['waveform'] = open_csv(fname, -files_data['info']['Value']['Rogovski_ampl'],
                                               files_data['info']['Value']['Rogovski_conv'])
             continue
         '''if fname.split('.')[-1] == 'xlsx':

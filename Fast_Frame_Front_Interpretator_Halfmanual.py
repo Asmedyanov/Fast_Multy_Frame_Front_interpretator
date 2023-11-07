@@ -10,6 +10,10 @@ from scipy.ndimage.filters import maximum_filter
 from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
 
 
+def f_line(x, a, b):
+    return a * x + b
+
+
 class Fast_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
         self.data_dict = open_folder()
@@ -57,7 +61,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         # self.shot_array[1] = np.flip(self.shot_array[1], axis=1)
         # self.shot_array = self.shot_array.reshape(2 * n_image, h_image // 2, w_image)
         # self.save_original_half('common/6.halfs.png')
-        for i in range(1):
+        for i in range(4):
             self.consider_quart(i)
 
     def consider_quart(self, quart_ind):
@@ -125,7 +129,9 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         plt.show()
 
         polynome_shot_array = np.array(polynomes_shot_list)
-        SSW_dep = polynome_shot_array[:, 1] - polynomes_before_list[0]
+        SSW_dep = polynome_shot_array
+        for i in range(polynome_shot_array.shape[0]):
+            SSW_dep[i] - polynomes_before_list[0]
 
         origins_list = []
         currents_list = []
@@ -136,8 +142,12 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         cross_section = self.cross_section(study_range * self.dx)
         for i, dep in enumerate(SSW_dep.transpose()):
             # time = np.insert(self.starts, 0, 0)
-            poly_coef = np.polyfit(self.starts, dep, 1)
-
+            # poly_coef = np.polyfit(self.starts, dep, 1)
+            popt, pcov = curve_fit(f_line, self.starts, dep)
+            poly_coef = popt
+            rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
+            print(rel_err)
+            rel_err = rel_err[0]*100
             poly_func = np.poly1d(poly_coef)
             time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
             dep_reg = poly_func(time_reg)
@@ -145,15 +155,16 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
             origin = -poly_coef[1] / poly_coef[0]
             current = np.interp(origin, self.wf_time, self.current)
             current_density = current / cross_section[i] * 1.0e2
-            if (origin > 0):
+            # if (origin > np.min(self.starts) / 2.718):
+            if ((rel_err < 25)&(origin>np.min(self.starts) / 2.718)):
                 try:
                     if len(origins_list) > 0:
-                        if origin < origins_list[-1]:
+                        if origin > origins_list[-1]:
                             continue
                         if origin > self.wf_time[np.argmax(self.current)]:
                             continue
 
-                        if current_density < current_density_list[-1]:
+                        if current_density > current_density_list[-1]:
                             continue
                     origins_list.append(origin)
                     currents_list.append(current)
@@ -163,9 +174,9 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                     action_list.append(action)
                 except Exception as ex:
                     print(ex)
-            if i % 20 == 0:
-                plt.plot(self.starts, dep, 'o')
-                plt.plot(time_reg, dep_reg)
+                if i % 20 == 0:
+                    plt.plot(self.starts, dep, '-o')
+                    plt.plot(time_reg, dep_reg)
         current_density_array = np.array(current_density_list)
         action_array = np.array(action_list)
         plt.savefig(f'quart{quart_ind}/1.time_reg.png')
@@ -181,6 +192,11 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         plt.title('Action integral')
         plt.savefig(f'quart{quart_ind}/3.action_integral.png')
         plt.show()
+        action_integral_data = pd.DataFrame({
+            'j_10e8_A/cm^2':current_density_array*1.0e-8,
+            'h_10e9_A^2*s/cm^4':action_array*1.0e-9
+        })
+        action_integral_data.to_csv(f'quart{quart_ind}/4.action_integral.csv')
 
     def get_sq_line_regration(self, image_array, a, b):
         image_process = image_array[:, :self.end[0]]
@@ -285,7 +301,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 ax[1].plot(profile)
             profiles_values.append(profile)
         plt.draw()
-        poly_coef = np.array([a_center, b_center])
+        self.poly_coef = np.array([a_center, b_center])
 
         def mouse_event_front_level(event):
             try:
@@ -307,10 +323,10 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                     front_list_y.append(front_y)
                 except Exception as ex:
                     pass  # print(ex)
-            poly_coef = np.polyfit(front_list_x, front_list_y, 1)
-            poly_func = np.poly1d(poly_coef)
-            self.tilt_before = poly_coef[0]
-            self.shift_before = poly_coef[1]
+            self.poly_coef = np.polyfit(front_list_x, front_list_y, 1)
+            poly_func = np.poly1d(self.poly_coef)
+            self.tilt_before = self.poly_coef[0]
+            self.shift_before = self.poly_coef[1]
             self.poly_y = poly_func(x_center)
 
             self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
@@ -321,7 +337,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
 
         plt.show()
-        return poly_coef
+        return self.poly_coef
 
     def get_end_of_front(self, image_array):
         fig = plt.figure()
@@ -489,7 +505,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.current = self.data_dict['waveform']['current']
 
     def cross_section(self, z):
-        s = self.waist + (self.w_foil - self.waist) * z / self.l_foil
+        s = 0.5 * self.waist + (self.w_foil - self.waist) * z / self.l_foil
         return 2 * s * self.h_foil
 
     def get_polynomes(self, image_before, image_shot):
