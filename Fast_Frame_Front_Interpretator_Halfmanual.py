@@ -47,8 +47,11 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
 
         self.before_array = np.swapaxes(self.before_array, 1, 2)
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
+        # profile = self.before_array[0].mean(axis=1)
+        # plt.plot(np.gradient(profile))
+        # plt.show()
         self.save_all_images('common/5.swapped.png')
-        for i in range(1):
+        for i in [0, 1, 2, 3]:
             self.consider_quart(i)
 
     def consider_quart(self, quart_ind):
@@ -57,12 +60,12 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         except:
             pass
         if quart_ind in [0, 1]:
-            self.before_half = self.before_array[:, :self.shape[1] // 2]
-            self.shot_half = self.shot_array[:, :self.shape[1] // 2]
+            self.before_half = self.before_array[:, :self.shape[2] // 2]
+            self.shot_half = self.shot_array[:, :self.shape[2] // 2]
         else:
-            self.before_half = self.before_array[:, self.shape[1] // 2:]
+            self.before_half = self.before_array[:, self.shape[2] // 2:]
             self.before_half = np.flip(self.before_half, axis=1)
-            self.shot_half = self.shot_array[:, self.shape[1] // 2:]
+            self.shot_half = self.shot_array[:, self.shape[2] // 2:]
             self.shot_half = np.flip(self.shot_half, axis=1)
         self.consider_half(quart_ind)
 
@@ -370,7 +373,6 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_center)
         plt.show()
 
-
     def save_all_images(self, name):
         fig, ax = plt.subplots(2, 4)
         fig.set_size_inches(11.7, 8.3)
@@ -412,7 +414,6 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
     def cross_section(self, z):
         s = 0.5 * self.waist + (self.w_foil - self.waist) * z / self.l_foil
         return 2 * s * self.h_foil
-
 
     def contrast(self, image_array):
         ret_array = (image_array * 3) ** 2

@@ -31,12 +31,17 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     waveform = pd.read_csv(fname)
     sinc_time = waveform['s.1'].values * 1.0e6
     sinc_volt = np.abs(np.gradient(waveform['Volts.1']))
-    if sinc_volt.max()<10.0*sinc_volt.mean():
+    if sinc_volt.max() < 10.0 * sinc_volt.mean():
         sinc_volt = np.abs(np.gradient(waveform['Volts.2']))
-    peaks = find_peaks(sinc_volt[:sinc_volt.size//2], prominence=0.1)[0]
+    peaks = find_peaks(sinc_volt[:sinc_volt.size // 2], prominence=0.1)[0]
     peaks = peaks[-8:]
     peak_times = sinc_time[peaks]
     current_volt = waveform['Volts'].values
+    '''plt.plot(sinc_time, sinc_volt)
+    plt.plot(sinc_time, current_volt)
+    plt.plot(sinc_time[peaks], sinc_volt[peaks],'o')
+
+    plt.show()'''
     current_amp = current_volt * Rogovski_ampl
     n_conv = Rogovski_conv
     a_conv = np.ones(n_conv) / float(n_conv)
@@ -50,6 +55,9 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     main_shift = current_time[current_start]
     peak_times -= main_shift
     current_time -= main_shift
+    #plt.plot(current_time, current_amp)
+    #plt.plot(peak_times, current_amp[peaks],'o')
+    #plt.show()
     ret = {
         'time': current_time,
         'current': current_amp,
@@ -81,4 +89,3 @@ def open_folder():
             continue'''
     pass
     return files_data
-
