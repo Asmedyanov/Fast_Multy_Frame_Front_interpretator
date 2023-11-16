@@ -14,6 +14,14 @@ def f_line(x, a, b):
     return a * x + b
 
 
+def f_bipower(t, t0, a0, b0, d, a1, power1, power2):
+    a2 = (a0 - a1 * power1 * np.power(t0, power1 - 1.0)) * np.power(t0, 1.0 - power2) / power2
+    h = a0 * t0 + b0 + d - a1 * np.power(t0, power1) - a2 * np.power(t0, power2)
+    y = np.where(t > t0, a0 * t + b0 + d,
+                 a1 * np.power(t, power1) + a2 * np.power(t, power2) + h)
+    return y
+
+
 class Fast_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
         self.data_dict = open_folder()
@@ -72,7 +80,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
     def consider_half(self, quart_ind):
         a_list = []
         b_list = []
-        t0_list = []
+        opt_list = []
         for i in range(self.shape[0]):
             self.get_center_of_image(self.before_half[i])
             if quart_ind in [0, 3]:
@@ -85,25 +93,30 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 self.shot_quart = np.flip(self.shot_quart, axis=1)
             self.get_end_of_front(self.before_quart)
             a, b = self.get_line_regration(self.before_quart)
-            t0 = self.get_sq_line_regration(self.shot_quart, a, b)
+            opt = self.get_sq_line_regration(self.shot_quart, a, b)
             a_list.append(a)
             b_list.append(b)
-            t0_list.append(t0)
-        study_range = np.arange(np.max(t0_list))
+            opt_list.append(opt)
+        popt = np.array(opt_list)
+        study_range = np.arange(np.max(popt[:, 0]))
         polynomes_before_list = []
         polynomes_shot_list = []
         for i in range(self.shape[0]):
             polynome_before = a_list[i] * study_range + b_list[i]
 
-            def my_func(t, t0):
+            '''def my_func(t, t0):
                 al = a_list[i] / (2.0 * t0)
                 cl = a_list[i] * 1.0
                 dl = b_list[i] * 1.0
                 bl = dl + t0 * cl / 2.0
                 yl = np.where(t > t0, cl * t + dl, al * t ** 2.0 + bl)
-                return yl
+                return yl'''
 
-            polynome_shot = my_func(study_range, t0_list[i])
+            def my_func_(t):
+                y = f_bipower(t,popt[i,0],a_list[i],b_list[i],popt[i,1],popt[i,2],popt[i,3],popt[i,4])
+                return y
+
+            polynome_shot = my_func_(study_range)
             polynomes_before_list.append(polynome_before)
             polynomes_shot_list.append(polynome_shot)
         main_tilt = a_list[0]
@@ -239,19 +252,16 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 except Exception as ex:
                     pass  # print(ex)
 
-            def f_bi_sq(t, t0):
-                al = a / (2.0 * t0)
-                cl = a * 1.0
-                dl = b * 1.0
-                bl = dl + t0 * cl / 2.0
-                yl = np.where(t > t0, cl * t + dl, al * t ** 2.0 + bl)
-                return yl
+            def f_bi_power(t, t0, d, a1, power1, power2):
+                return f_bipower(t, t0, a, b, d, a1, power1, power2)
 
-            popt, perr = curve_fit(f_bi_sq, front_list_x, front_list_y,
-                                   bounds=([1, ], [w_image * 0.75, ]))
-            self.t0_loc = popt
+            popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
+                                   bounds=([1, -100.0, 0, 0.1, 0.1, ], [w_image * 0.75, 0, 100, 5.0, 5.0, ]))
+            t0, d, a1, power1, power2 = popt
+            self.optima = popt
+            print(popt)
             # print(t0)
-            self.poly_y = f_bi_sq(x_center, self.t0_loc)
+            self.poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
 
             self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
             self.plot_level, = ax[1].plot([0, 2 * self.w_front], [front_level, front_level], '-or')
@@ -261,7 +271,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
 
         plt.show()
-        return self.t0_loc
+        return self.optima
 
     def get_line_regration(self, image_array):
         image_process = image_array[:, :self.end[0]]
