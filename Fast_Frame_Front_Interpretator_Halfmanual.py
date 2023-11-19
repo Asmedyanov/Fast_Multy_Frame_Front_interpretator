@@ -113,7 +113,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 return yl'''
 
             def my_func_(t):
-                y = f_bipower(t,popt[i,0],a_list[i],b_list[i],popt[i,1],popt[i,2],popt[i,3],popt[i,4])
+                y = f_bipower(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2], popt[i, 3], popt[i, 4])
                 return y
 
             polynome_shot = my_func_(study_range)
@@ -206,46 +206,113 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         h_image, w_image = image_process.shape
         fig, ax = plt.subplots(1, 3)
         ax[0].imshow(image_process)
+        ax[0].set_title('Raw data')
+        ax[1].set_title('Level')
         ax[2].imshow(image_process)
         x_center = np.arange(w_image, dtype='int')
         b_center = self.center[1]
+        self.b_center = b_center
         a_center = (self.end[1] - b_center) / w_image
         y_center = a_center * x_center + b_center
-        y_center = y_center.astype(int)
-        ax[0].plot(x_center, y_center)
+        self.y_center = y_center.astype(int)
+        # ax[0].plot(x_center, y_center)
         y_up = y_center - self.w_front
-        y_up = np.where(y_up < 0, 0, y_up)
+        y_up = y_up.astype(int)
+        self.y_up = np.where(y_up < 0, 0, y_up)
         y_down = y_center + self.w_front
-        y_down = np.where(y_down >= h_image, h_image - 1, y_down)
-        ax[0].plot(x_center, y_up)
-        ax[0].plot(x_center, y_down)
+        y_down = y_down.astype(int)
+        self.y_down = np.where(y_down >= h_image, h_image - 1, y_down)
+        self.y_up_plot, = ax[0].plot(x_center, self.y_up)
+        self.y_down_plot, = ax[0].plot(x_center, self.y_down)
+        self.y_center_plot, = ax[0].plot(x_center, self.y_center)
+        # ax[0].plot(x_center, y_down)
         profiles_values = []
         profiles_x = x_center[self.w_smooth:-self.w_smooth]
         for x in profiles_x:
-            profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            profile = image_array[self.y_up[x]:self.y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
             profile -= profile.min()
             profile /= profile.mean()
             if x % 100 == 5:
                 ax[1].plot(profile)
             profiles_values.append(profile)
-        plt.draw()
+
         self.t0_loc = 0
+        self.plot_front, = ax[0].plot(x_center, self.y_center, 'or')
+        self.front_level = 1.0
+        self.plot_level, = ax[1].plot([0, 2 * self.w_front], [1.0, 1.0], '-or')
+        self.plot_poly, = ax[2].plot(x_center, self.y_center, 'r')
+        plt.draw()
+
+        def mouse_event_scroll(event):
+            if event.inaxes is not None:
+                increment = 1 if event.button == 'up' else -1
+                if event.inaxes.get_title() == 'Raw data':
+                    self.b_center += 10.0 * increment
+                    new_y_center = a_center * x_center + self.b_center
+                    if (np.max(new_y_center) > 0) & (np.min(new_y_center) < h_image):
+                        new_y_center = np.where(new_y_center > 0, new_y_center, 0)
+                        new_y_center = np.where(new_y_center < h_image, new_y_center, h_image - 1)
+                        self.y_center = new_y_center
+                        new_y_up = new_y_center - self.w_front
+                        new_y_up = np.where(new_y_up > 0, new_y_up, 0)
+                        new_y_up = np.where(new_y_up < h_image, new_y_up, h_image - 1)
+                        self.y_up = new_y_up
+                        new_y_down = new_y_center + self.w_front
+                        new_y_down = np.where(new_y_down > 0, new_y_down, 0)
+                        new_y_down = np.where(new_y_down < h_image, new_y_down, h_image - 1)
+                        self.y_down = new_y_down
+                        self.y_center_plot.set_ydata(self.y_center)
+                        self.y_up_plot.set_ydata(self.y_up)
+                        self.y_down_plot.set_ydata(self.y_down)
+                        plt.draw()
+                if event.inaxes.get_title() == 'Level':
+                    self.front_level += 0.02 * increment
+                    front_list_x = []
+                    front_list_y = []
+                    for i in range(len(profiles_values)):
+                        try:
+                            front_y = np.argwhere(profiles_values[i] > self.front_level).max()
+                            front_y += self.y_up[profiles_x[i]]
+                            front_x = profiles_x[i]
+                            front_list_x.append(front_x)
+                            front_list_y.append(front_y)
+                        except Exception as ex:
+                            pass  # print(ex)
+
+                    def f_bi_power(t, t0, d, a1, power1, power2):
+                        return f_bipower(t, t0, a, b, d, a1, power1, power2)
+
+                    popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
+                                           bounds=([1, -100.0, 0, 0.1, 0.1, ], [w_image * 0.75, 0, 100, 5.0, 5.0, ]))
+                    t0, d, a1, power1, power2 = popt
+                    self.optima = popt
+                    # print(popt)
+                    # print(t0)
+                    poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+                    poly_y = np.where(poly_y > 0, poly_y, 0)
+                    poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
+                    self.poly_y = poly_y
+                    self.plot_front.set_data(front_list_x, front_list_y)
+                    self.plot_level.set_ydata([self.front_level, self.front_level])
+                    self.plot_poly.set_ydata(self.poly_y)
+                    plt.draw()
 
         def mouse_event_front_level(event):
-            try:
+            '''try:
                 self.plot_front.remove()
                 self.plot_poly.remove()
                 self.plot_level.remove()
             except Exception as ex:
-                pass
+                pass'''
             x, y = event.xdata, event.ydata
             front_level = y
+            self.front_level = front_level
             front_list_x = []
             front_list_y = []
             for i in range(len(profiles_values)):
                 try:
                     front_y = np.argwhere(profiles_values[i] > front_level).max()
-                    front_y += y_up[profiles_x[i]]
+                    front_y += self.y_up[profiles_x[i]]
                     front_x = profiles_x[i]
                     front_list_x.append(front_x)
                     front_list_y.append(front_y)
@@ -259,16 +326,19 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                                    bounds=([1, -100.0, 0, 0.1, 0.1, ], [w_image * 0.75, 0, 100, 5.0, 5.0, ]))
             t0, d, a1, power1, power2 = popt
             self.optima = popt
-            print(popt)
+            # print(popt)
             # print(t0)
-            self.poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
-
-            self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
-            self.plot_level, = ax[1].plot([0, 2 * self.w_front], [front_level, front_level], '-or')
-            self.plot_poly, = ax[2].plot(x_center, self.poly_y, 'r')
+            poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+            poly_y = np.where(poly_y > 0, poly_y, 0)
+            poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
+            self.poly_y = poly_y
+            self.plot_front.set_data(front_list_x, front_list_y)
+            self.plot_level.set_ydata([front_level, front_level])
+            self.plot_poly.set_ydata(self.poly_y)
             plt.draw()
 
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
+        self.cid1 = fig.canvas.mpl_connect('scroll_event', mouse_event_scroll)
 
         plt.show()
         return self.optima
@@ -398,9 +468,13 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         fig, ax = plt.subplots(2, 4)
         fig.set_size_inches(11.7, 8.3)
         for i in range(4):
-            ax[0, i].imshow(np.log(np.abs(self.before_array_specter[i])))
+            show_array = np.abs(self.before_array_specter[i]) + 1.0e-5
+            show_array = np.where(show_array > 1.0e-3, np.log(show_array), 1.0e-3)
+            ax[0, i].imshow(show_array)
             ax[0, i].set_title(f'from {int(self.starts[i] * 1000)} ns to {int(self.stops[i] * 1000)} ns')
-            ax[1, i].imshow(np.log(np.abs(self.shot_array_specter[i])))
+            show_array = np.abs(self.shot_array_specter[i]) + 1.0e-5
+            show_array = np.where(show_array > 1.0e-3, np.log(show_array), 1.0e-3)
+            ax[1, i].imshow(show_array)
         plt.tight_layout()
         fig.savefig(name)
         plt.close()
