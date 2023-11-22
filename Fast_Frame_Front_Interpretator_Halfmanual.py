@@ -22,6 +22,13 @@ def f_bipower(t, t0, a0, b0, d, a1, power1, power2):
     return y
 
 
+def f_squre_line(t, t0, a0, b0, d0, t1):
+    a = a0 / (2.0 * (t0 - t1))
+    d = a0 * t0 + b0 + d0 - a * np.square(t0 - t1)
+    y = np.where(t < t0,
+                 a * np.square(t - t1) + d,
+                 a0 * t + b0 + d0)
+    return y
 
 
 class Fast_Frame_Front_Interpretator_Halfmanual:
@@ -115,7 +122,8 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 return yl'''
 
             def my_func_(t):
-                y = f_bipower(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2], popt[i, 3], popt[i, 4])
+                # y = f_bipower(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2], popt[i, 3], popt[i, 4])
+                y = f_squre_line(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2])
                 return y
 
             polynome_shot = my_func_(study_range)
@@ -244,7 +252,9 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.plot_level, = ax[1].plot([0, 2 * self.w_front], [1.0, 1.0], '-or')
         self.plot_poly, = ax[2].plot(x_center, self.y_center, 'r')
         plt.draw()
-        bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image*0.75, 0, 100, 1.1, 4.0, ])
+        # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
+        bounds = ([0, -200, -200],
+                  [w_image * 0.75, 0, 0])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
@@ -285,13 +295,18 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                     def f_bi_power(t, t0, d, a1, power1, power2):
                         return f_bipower(t, t0, a, b, d, a1, power1, power2)
 
-                    popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
+                    def f_squre_line_local(t, t0, d0, t1):
+                        return f_squre_line(t, t0, a, b, d0, t1)
+
+                    popt, perr = curve_fit(f_squre_line_local, front_list_x, front_list_y,
                                            bounds=bounds)
-                    t0, d, a1, power1, power2 = popt
+                    # t0, d, a1, power1, power2 = popt
+                    t0, d0, t1 = popt
                     self.optima = popt
                     # print(popt)
                     # print(t0)
-                    poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+                    # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+                    poly_y = f_squre_line_local(x_center, t0, d0, t1)
                     poly_y = np.where(poly_y > 0, poly_y, 0)
                     poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
                     self.poly_y = poly_y
@@ -325,18 +340,23 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
             def f_bi_power(t, t0, d, a1, power1, power2):
                 return f_bipower(t, t0, a, b, d, a1, power1, power2)
 
-            popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
+            def f_squre_line_local(t, t0, d0, a1):
+                return f_squre_line(t, t0, a, b, d0, a1)
+
+            popt, perr = curve_fit(f_squre_line_local, front_list_x, front_list_y,
                                    bounds=bounds)
-            t0, d, a1, power1, power2 = popt
+            # t0, d, a1, power1, power2 = popt
+            t0, d0, a1 = popt
             self.optima = popt
             # print(popt)
             # print(t0)
-            poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+            # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
+            poly_y = f_squre_line_local(x_center, t0, d0, a1)
             poly_y = np.where(poly_y > 0, poly_y, 0)
             poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
             self.poly_y = poly_y
             self.plot_front.set_data(front_list_x, front_list_y)
-            self.plot_level.set_ydata([front_level, front_level])
+            self.plot_level.set_ydata([self.front_level, self.front_level])
             self.plot_poly.set_ydata(self.poly_y)
             plt.draw()
 
