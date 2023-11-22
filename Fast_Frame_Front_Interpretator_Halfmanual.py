@@ -22,6 +22,8 @@ def f_bipower(t, t0, a0, b0, d, a1, power1, power2):
     return y
 
 
+
+
 class Fast_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
         self.data_dict = open_folder()
@@ -242,6 +244,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.plot_level, = ax[1].plot([0, 2 * self.w_front], [1.0, 1.0], '-or')
         self.plot_poly, = ax[2].plot(x_center, self.y_center, 'r')
         plt.draw()
+        bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image*0.75, 0, 100, 1.1, 4.0, ])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
@@ -283,7 +286,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                         return f_bipower(t, t0, a, b, d, a1, power1, power2)
 
                     popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
-                                           bounds=([1, -100.0, 0, 0.1, 0.1, ], [w_image * 0.75, 0, 100, 5.0, 5.0, ]))
+                                           bounds=bounds)
                     t0, d, a1, power1, power2 = popt
                     self.optima = popt
                     # print(popt)
@@ -323,7 +326,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 return f_bipower(t, t0, a, b, d, a1, power1, power2)
 
             popt, perr = curve_fit(f_bi_power, front_list_x, front_list_y,
-                                   bounds=([1, -100.0, 0, 0.1, 0.1, ], [w_image * 0.75, 0, 100, 5.0, 5.0, ]))
+                                   bounds=bounds)
             t0, d, a1, power1, power2 = popt
             self.optima = popt
             # print(popt)
