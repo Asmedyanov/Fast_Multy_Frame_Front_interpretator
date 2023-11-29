@@ -50,14 +50,14 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     zero_ind = np.argwhere(current_time < 0).max()
     noise = current_amp[:zero_ind]
     current_amp -= noise.mean()
-    noise_ample = np.std(noise)
-    current_start = np.argwhere(np.abs(current_amp) > 2.2 * np.max(noise)).min()
+    noise_ample = np.abs(noise-noise.min())
+    current_start = np.argwhere(np.abs(current_amp) > 0.8*np.max(noise_ample)).min()
     main_shift = current_time[current_start]
     peak_times -= main_shift
     current_time -= main_shift
-    #plt.plot(current_time, current_amp)
-    #plt.plot(peak_times, current_amp[peaks],'o')
-    #plt.show()
+    plt.plot(current_time, current_amp)
+    plt.plot(peak_times, current_amp[peaks],'o')
+    plt.show()
     ret = {
         'time': current_time,
         'current': current_amp,
