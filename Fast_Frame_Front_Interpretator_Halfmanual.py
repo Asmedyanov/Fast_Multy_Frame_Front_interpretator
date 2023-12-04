@@ -46,7 +46,10 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.save_all_images('common/5.swapped.png')
         self.action_integral_list = []
         for i in [0, 1, 2, 3]:
-            self.consider_quart(i)
+            try:
+                self.consider_quart(i)
+            except Exception as ex:
+                print(ex)
         plt.clf()
         for df in self.action_integral_list:
             plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o')
@@ -129,50 +132,57 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         cross_section = self.cross_section(study_range * self.dx)
         time = np.insert(self.starts, 0, 0)
         for i, dep in enumerate(SSW_dep.transpose()):
+            try:
+                dep_loc = np.insert(dep, 0, 0)
+                # poly_coef = np.polyfit(self.starts, dep, 1)
+                # bounds = ([0, -100], [time[-2],100])
+                # bounds = ([time[1] * 0.1, 1.0e-9, 0.2], [time[1] * 0.9, 1.0e9, 1.0])
+                bounds = ([0, time[-1], -1.0e12], [time[1], time[-1] * 1.0e12, -1.0e-9])
+                popt, pcov = curve_fit(f_square_line_time, time, dep_loc, bounds=bounds)
+                #popt, pcov = curve_fit(f_square_line_time, time, dep_loc)
+                # poly_coef = popt
+                # t0, b = popt
+                # t0, a, b = popt
+                t0, t1, a = popt
+                rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
+                print(t0)
+                print(rel_err)
+                rel_err = rel_err[0] * 100
+                # poly_func = np.poly1d(poly_coef)
+                time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
+                # dep_reg = poly_func(time_reg)
+                # dep_reg = np.where(dep_reg < 0, 0, dep_reg)
+                dep_reg = f_square_line_time(time_reg, t0, t1, a)
+                origin = t0  # -poly_coef[1] / poly_coef[0]
+                current = np.interp(origin, self.wf_time, self.current)
+                current_density = current / cross_section[i] * 1.0e2
+                # if (origin > np.min(self.starts) / 2.718):
+                if (rel_err < 20):
+                    try:
+                        if len(origins_list) > 0:
+                            '''if origin > origins_list[-1]:
+                                continue'''
+                            if origin > self.wf_time[np.argmax(self.current)]:
+                                continue
 
-            dep_loc = np.insert(dep, 0, 0)
-            # poly_coef = np.polyfit(self.starts, dep, 1)
-            bounds = ([0, -100], [time[-2],100])
-            popt, pcov = curve_fit(f_line_shelf, time, dep_loc,bounds=bounds)
-            # poly_coef = popt
-            t0, b = popt
-            rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
-            print(t0)
-            print(rel_err)
-            rel_err = rel_err[0] * 100
-            #poly_func = np.poly1d(poly_coef)
-            time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
-            #dep_reg = poly_func(time_reg)
-            #dep_reg = np.where(dep_reg < 0, 0, dep_reg)
-            dep_reg = f_line_shelf(time_reg, t0, b)
-            origin = t0#-poly_coef[1] / poly_coef[0]
-            current = np.interp(origin, self.wf_time, self.current)
-            current_density = current / cross_section[i] * 1.0e2
-            # if (origin > np.min(self.starts) / 2.718):
-            if (rel_err < 30):
-                try:
-                    if len(origins_list) > 0:
-                        '''if origin > origins_list[-1]:
-                            continue'''
-                        if origin > self.wf_time[np.argmax(self.current)]:
-                            continue
-
-                        '''if current_density < current_density_list[-1]:
-                            continue'''
-                    origins_list.append(origin)
-                    currents_list.append(current)
-                    current_density_list.append(current_density)
-                    args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= origin))
-                    action = np.sum(self.current[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
-                    action_list.append(action)
-                except Exception as ex:
-                    print(ex)
-            if i % 5 == 0:
-                plt.plot(time, dep_loc, '-o')
-                plt.plot(time_reg, dep_reg)
-            '''if ((rel_err > 30) & (origin > np.min(self.starts) / 2.718)):
-                    plt.plot(self.starts, dep, '-o')
-                    plt.plot(time_reg, dep_reg)'''
+                            '''if current_density < current_density_list[-1]:
+                                continue'''
+                        origins_list.append(origin)
+                        currents_list.append(current)
+                        current_density_list.append(current_density)
+                        args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= origin))
+                        action = np.sum(self.current[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
+                        action_list.append(action)
+                    except Exception as ex:
+                        print(ex)
+                if i % 10 == 0:
+                    plt.plot(time, dep_loc, '-o')
+                    plt.plot(time_reg, dep_reg)
+                '''if ((rel_err > 30) & (origin > np.min(self.starts) / 2.718)):
+                        plt.plot(self.starts, dep, '-o')
+                        plt.plot(time_reg, dep_reg)'''
+            except Exception as ex:
+                print(ex)
         current_density_array = np.array(current_density_list)
         action_array = np.array(action_list)
         plt.savefig(f'quart{quart_ind}/1.time_reg.png')
@@ -239,7 +249,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         plt.draw()
         # t0, d0, t1
         # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
-        bounds = ([0, -1000, -w_image * 0.95],
+        bounds = ([0, -1000, -w_image * 0.5],
                   [w_image * 0.75, 0, 0])
 
         def mouse_event_scroll(event):
