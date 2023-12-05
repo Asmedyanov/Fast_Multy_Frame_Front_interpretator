@@ -17,6 +17,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.data_dict = open_folder()
         self.sort_data_dict()
         self.starts = self.peak_times[::2]
+        self.starts = self.starts[self.sequence]
         self.stops = self.peak_times[1::2]
         os.makedirs('common', exist_ok=True)
         self.save_all_images('common/0.original.png')
@@ -518,7 +519,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.l_foil = self.data_dict['info']['Value']['Length']
         self.w_front = self.data_dict['info']['Value']['w_front']
         self.w_smooth = self.data_dict['info']['Value']['w_smooth']
-        self.sequence = np.array(self.data_dict['info']['Value']['Sequence'].split(','),dtype='int')
+        self.sequence = np.array(self.data_dict['info']['Value']['Sequence'].split(','), dtype='int')
         # self.shot_name, self.before_array, self.shot_array, self.peak_times, self.wf_time, self.current = open_images()
         self.before_array = self.data_dict['before']
         self.shot_array = self.data_dict['shot']
