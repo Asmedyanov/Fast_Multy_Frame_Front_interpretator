@@ -12,7 +12,7 @@ from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
 from ApproxFunc import *
 
 
-class Fast_Frame_Front_Interpretator_Halfmanual:
+class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
         self.data_dict = open_folder()
         self.sort_data_dict()
@@ -139,7 +139,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
                 # bounds = ([time[1] * 0.1, 1.0e-9, 0.2], [time[1] * 0.9, 1.0e9, 1.0])
                 bounds = ([0, time[-1], -1.0e12], [time[1], time[-1] * 1.0e12, -1.0e-9])
                 popt, pcov = curve_fit(f_square_line_time, time, dep_loc, bounds=bounds)
-                #popt, pcov = curve_fit(f_square_line_time, time, dep_loc)
+                # popt, pcov = curve_fit(f_square_line_time, time, dep_loc)
                 # poly_coef = popt
                 # t0, b = popt
                 # t0, a, b = popt
@@ -518,6 +518,7 @@ class Fast_Frame_Front_Interpretator_Halfmanual:
         self.l_foil = self.data_dict['info']['Value']['Length']
         self.w_front = self.data_dict['info']['Value']['w_front']
         self.w_smooth = self.data_dict['info']['Value']['w_smooth']
+        self.sequence = np.array(self.data_dict['info']['Value']['Sequence'].split(','),dtype='int')
         # self.shot_name, self.before_array, self.shot_array, self.peak_times, self.wf_time, self.current = open_images()
         self.before_array = self.data_dict['before']
         self.shot_array = self.data_dict['shot']
