@@ -17,8 +17,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
         self.data_dict = open_folder()
         self.sort_data_dict()
-        self.starts = self.peak_times[[0, 2, 4, 6]]
-        # self.starts = self.starts[self.sequence]
+        self.starts = self.peak_times[::2]
+        self.starts = self.starts[self.sequence]
         self.stops = self.peak_times[1::2]
         os.makedirs('common', exist_ok=True)
         self.save_all_images('common/0.original.png')
@@ -91,17 +91,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             a, b = self.get_line_regration(self.before_quart, dialog_name=f'Before quart {quart_ind} camera {i}')
             opt_1 = self.get_sq_line_regration(self.shot_quart, a, b,
                                                dialog_name=f'Front 1 quart {quart_ind} camera {i}')
-            '''opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
-                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')'''
+            opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
+                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')
             a_list.append(a)
             b_list.append(b)
             opt_list.append(opt_1)
-            # opt_list.append(opt_2)
+            opt_list.append(opt_2)
         popt = np.array(opt_list)
         study_range = np.arange(int(popt[:, 0].max()))
         polynomes_before_list = []
         polynomes_shot_list = []
-        for i in range(self.shape[0]):
+        for i in range(self.shape[0]*2):
             polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
@@ -114,7 +114,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             polynomes_shot_list.append(polynome_shot)
         main_tilt = a_list[0]
         # main_shift = polynomes_before_list[0][0]
-        for i in range(self.shape[0]):
+        for i in range(self.shape[0]*2):
             polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
             polynomes_shot_list[i] *= main_tilt / a_list[i % 4]
             polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
@@ -183,7 +183,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                     except Exception as ex:
                         print(ex)
                 if i % 10 == 0:
-                    plt.plot(time, dep_loc, '-o')
+                    plt.plot(time, dep_loc, 'o')
                     plt.plot(time_reg, dep_reg)
                 '''if ((rel_err > 30) & (origin > np.min(self.starts) / 2.718)):
                         plt.plot(self.starts, dep, '-o')
