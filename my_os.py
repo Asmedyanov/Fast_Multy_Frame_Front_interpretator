@@ -69,7 +69,7 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
 
 
 def open_folder():
-    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing')
+    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe/shot47')
     current_dir = os.curdir
     os.chdir(folder_name)
     files_data = dict()

@@ -14,6 +14,7 @@ from ApproxFunc import *
 
 class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
+
         self.data_dict = open_folder()
         self.sort_data_dict()
         self.starts = self.peak_times[::2]
@@ -76,7 +77,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         opt_list = []
 
         for i in range(self.shape[0]):
-            self.get_center_of_image(self.before_half[i])
+            self.get_center_of_image(self.before_half[i], dialog_name=f'Center of quart {quart_ind} camera {i}')
             limit = self.center[0]
             if quart_ind in [0, 3]:
                 self.before_quart = self.before_half[i, :, limit:]
@@ -86,22 +87,26 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 self.before_quart = np.flip(self.before_quart, axis=1)
                 self.shot_quart = self.shot_half[i, :, :limit]
                 self.shot_quart = np.flip(self.shot_quart, axis=1)
-            self.get_end_of_front(self.before_quart)
-            a, b = self.get_line_regration(self.before_quart)
-            opt = self.get_sq_line_regration(self.shot_quart, a, b)
+            self.get_end_of_front(self.before_quart, dialog_name=f'End of quart {quart_ind} camera {i}')
+            a, b = self.get_line_regration(self.before_quart, dialog_name=f'Before quart {quart_ind} camera {i}')
+            opt_1 = self.get_sq_line_regration(self.shot_quart, a, b,
+                                               dialog_name=f'Front 1 quart {quart_ind} camera {i}')
+            opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
+                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')
             a_list.append(a)
             b_list.append(b)
-            opt_list.append(opt)
+            opt_list.append(opt_1)
+            opt_list.append(opt_2)
         popt = np.array(opt_list)
         study_range = np.arange(int(popt[:, 0].max()))
         polynomes_before_list = []
         polynomes_shot_list = []
-        for i in range(self.shape[0]):
-            polynome_before = a_list[i] * study_range + b_list[i]
+        for i in range(self.shape[0] * 2):
+            polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
                 # y = f_bipower(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2], popt[i, 3], popt[i, 4])
-                y = f_square_line(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2])
+                y = f_square_line(t, popt[i, 0], a_list[i % 4], b_list[i % 4], popt[i, 1], popt[i, 2])
                 return y
 
             polynome_shot = my_func_(study_range)
@@ -109,9 +114,9 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             polynomes_shot_list.append(polynome_shot)
         main_tilt = a_list[0]
         # main_shift = polynomes_before_list[0][0]
-        for i in range(self.shape[0]):
+        for i in range(self.shape[0] * 2):
             polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
-            polynomes_shot_list[i] *= main_tilt / a_list[i]
+            polynomes_shot_list[i] *= main_tilt / a_list[i % 4]
             polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
         for poly in polynomes_shot_list:
             plt.plot(study_range, poly)
@@ -206,10 +211,11 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         action_integral_data.to_csv(f'quart{quart_ind}/4.action_integral.csv')
         self.action_integral_list.append(action_integral_data)
 
-    def get_sq_line_regration(self, image_array, a, b):
+    def get_sq_line_regration(self, image_array, a, b, dialog_name='Front 1'):
         image_process = image_array[:, :self.end[0]]
         h_image, w_image = image_process.shape
         fig, ax = plt.subplots(1, 3)
+        ax[2].set_title(dialog_name)
         ax[0].imshow(image_process)
         ax[0].set_title('Raw data')
         ax[1].set_title('Level')
@@ -324,12 +330,6 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                     plt.draw()
 
         def mouse_event_front_level(event):
-            '''try:
-                self.plot_front.remove()
-                self.plot_poly.remove()
-                self.plot_level.remove()
-            except Exception as ex:
-                pass'''
             x, y = event.xdata, event.ydata
             front_level = y
             self.front_level = front_level
@@ -370,14 +370,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
         self.cid1 = fig.canvas.mpl_connect('scroll_event', mouse_event_scroll)
-
+        plt.tight_layout()
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
         plt.show()
         return self.optima
 
-    def get_line_regration(self, image_array):
+    def get_line_regration(self, image_array, dialog_name='Before'):
         image_process = image_array[:, :self.end[0]]
         h_image, w_image = image_process.shape
         fig, ax = plt.subplots(1, 3)
+        ax[2].set_title(dialog_name)
         ax[0].imshow(image_process)
         ax[2].imshow(image_process)
         x_center = np.arange(w_image, dtype='int')
@@ -436,14 +439,16 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             plt.draw()
 
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
-
+        plt.tight_layout()
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
         plt.show()
         return self.poly_coef
 
-    def get_end_of_front(self, image_array):
+    def get_end_of_front(self, image_array, dialog_name='End of quart'):
         fig = plt.figure()
         plt.imshow(image_array)
-        plt.title('Choose the end of front. Close to continue')
+        plt.title(dialog_name)
         shape = image_array.shape
         self.end = [shape[0] - 1, shape[1] - 1]
 
@@ -461,12 +466,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             plt.draw()
 
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_end)
+        plt.tight_layout()
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
         plt.show()
 
-    def get_center_of_image(self, image_array):
+    def get_center_of_image(self, image_array, dialog_name='Center'):
         fig = plt.figure()
         plt.imshow(image_array)
-        plt.title('Choose the butterfly center. Close to continue')
+        plt.title(dialog_name)
         shape = image_array.shape
         self.center = [shape[0] // 2, shape[1] // 2]
 
@@ -482,6 +490,9 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             plt.draw()
 
         self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_center)
+        plt.tight_layout()
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
         plt.show()
 
     def save_all_images(self, name):
