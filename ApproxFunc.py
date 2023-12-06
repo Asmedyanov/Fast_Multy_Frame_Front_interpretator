@@ -38,3 +38,7 @@ def f_square_line_time(t, t0, t1, a):
     c = -a * t0 ** 2 + 2 * a * t0 * t1
     ret = np.where(t<t0,0,a*t**2+b*t+c)
     return ret
+
+def f_square_line_time_reversed(x, a, c):
+    ret = a * x + c
+    return ret

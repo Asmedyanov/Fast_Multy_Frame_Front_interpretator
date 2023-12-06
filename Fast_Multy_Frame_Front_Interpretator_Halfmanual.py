@@ -17,8 +17,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
         self.data_dict = open_folder()
         self.sort_data_dict()
-        self.starts = self.peak_times[::2]
-        self.starts = self.starts[self.sequence]
+        self.starts = self.peak_times[[0, 2, 4, 6]]
+        # self.starts = self.starts[self.sequence]
         self.stops = self.peak_times[1::2]
         os.makedirs('common', exist_ok=True)
         self.save_all_images('common/0.original.png')
@@ -91,17 +91,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             a, b = self.get_line_regration(self.before_quart, dialog_name=f'Before quart {quart_ind} camera {i}')
             opt_1 = self.get_sq_line_regration(self.shot_quart, a, b,
                                                dialog_name=f'Front 1 quart {quart_ind} camera {i}')
-            opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
-                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')
+            '''opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
+                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')'''
             a_list.append(a)
             b_list.append(b)
             opt_list.append(opt_1)
-            opt_list.append(opt_2)
+            # opt_list.append(opt_2)
         popt = np.array(opt_list)
         study_range = np.arange(int(popt[:, 0].max()))
         polynomes_before_list = []
         polynomes_shot_list = []
-        for i in range(self.shape[0] * 2):
+        for i in range(self.shape[0]):
             polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
@@ -114,7 +114,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             polynomes_shot_list.append(polynome_shot)
         main_tilt = a_list[0]
         # main_shift = polynomes_before_list[0][0]
-        for i in range(self.shape[0] * 2):
+        for i in range(self.shape[0]):
             polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
             polynomes_shot_list[i] *= main_tilt / a_list[i % 4]
             polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
@@ -136,30 +136,31 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         action_list = []
         dt_current = np.gradient(self.wf_time).mean()
         cross_section = self.cross_section(study_range * self.dx)
-        time = np.insert(self.starts, 0, 0)
+        time = self.starts
         for i, dep in enumerate(SSW_dep.transpose()):
             try:
-                dep_loc = np.insert(dep, 0, 0)
+                dep_loc = dep[np.argwhere(dep > 0)[:, 0]]
+                time_loc = time[np.argwhere(dep > 0)[:, 0]]
                 # poly_coef = np.polyfit(self.starts, dep, 1)
-                # bounds = ([0, -100], [time[-2],100])
-                # bounds = ([time[1] * 0.1, 1.0e-9, 0.2], [time[1] * 0.9, 1.0e9, 1.0])
-                bounds = ([0, time[-1], -1.0e12], [time[1], time[-1] * 1.0e12, -1.0e-9])
-                popt, pcov = curve_fit(f_square_line_time, time, dep_loc, bounds=bounds)
+                bounds = ([0, time[0] * 1.0e-2], [1.0e6, time[-1]])
+                popt, pcov = curve_fit(f_square_line_time_reversed, dep_loc, time_loc, bounds=bounds)
                 # popt, pcov = curve_fit(f_square_line_time, time, dep_loc)
                 # poly_coef = popt
                 # t0, b = popt
                 # t0, a, b = popt
-                t0, t1, a = popt
+                a, c = popt
                 rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
-                print(t0)
+                print(c)
                 print(rel_err)
-                rel_err = rel_err[0] * 100
+                rel_err = rel_err[1] * 100
                 # poly_func = np.poly1d(poly_coef)
-                time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
+                # time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
+                dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
+                time_reg = f_square_line_time_reversed(dep_reg, a, c)
                 # dep_reg = poly_func(time_reg)
                 # dep_reg = np.where(dep_reg < 0, 0, dep_reg)
-                dep_reg = f_square_line_time(time_reg, t0, t1, a)
-                origin = t0  # -poly_coef[1] / poly_coef[0]
+                # dep_reg = f_square_line_time_reversed(time_reg, a, b, c)
+                origin = c  # -poly_coef[1] / poly_coef[0]
                 current = np.interp(origin, self.wf_time, self.current)
                 current_density = current / cross_section[i] * 1.0e2
                 # if (origin > np.min(self.starts) / 2.718):
