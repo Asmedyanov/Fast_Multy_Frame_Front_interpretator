@@ -1,3 +1,6 @@
+"""
+The class which includes the main data processing
+"""
 import numpy as np
 
 # from my_math import *
@@ -13,14 +16,19 @@ from ApproxFunc import *
 
 
 class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
-    def __init__(self, *args, **kwargs):
+    """
+        The class which includes the main data processing
+    """
 
+    def __init__(self, *args, **kwargs):
+        """The class which includes the main data processing"""
         self.data_dict = open_folder()
         self.sort_data_dict()
         self.starts = self.peak_times[::2]
         self.starts = self.starts[self.sequence]
         self.stops = self.peak_times[1::2]
         os.makedirs('common', exist_ok=True)
+        # common preprocessing
         self.save_all_images('common/0.original.png')
         self.shape = self.before_array.shape
         self.before_array = self.get_norm_array(self.before_array)
@@ -46,19 +54,27 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
 
         self.save_all_images('common/5.swapped.png')
+        # separated processing by quarts
         self.action_integral_list = []
         for i in [0, 1, 2, 3]:
             try:
-                self.consider_quart(i)
+                self.consider_half(i)
             except Exception as ex:
                 print(ex)
         plt.clf()
-        for df in self.action_integral_list:
-            plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o')
+        for i, df in enumerate(self.action_integral_list):
+            df = df.sort_values('j_10e8_A/cm^2')
+            plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
+        plt.legend()
+        plt.grid()
+        plt.title('Action integral')
+        plt.xlabel('$j, 10^{8} A/cm^2$')
+        plt.ylabel('$h, 10^{9} A^{2}s/cm^4$')
         plt.savefig('common/6.action_integral.png')
         plt.show()
 
-    def consider_quart(self, quart_ind):
+    def consider_half(self, quart_ind):
+
         os.makedirs(f'quart{quart_ind}', exist_ok=True)
         limit = self.shape[2] // 2
         if quart_ind in [0, 1]:
@@ -69,9 +85,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             self.before_half = np.flip(self.before_half, axis=1)
             self.shot_half = self.shot_array[:, limit:]
             self.shot_half = np.flip(self.shot_half, axis=1)
-        self.consider_half(quart_ind)
+        self.consider_quart(quart_ind)
 
-    def consider_half(self, quart_ind):
+    def consider_quart(self, quart_ind):
+        """
+        The function founds action integral vs current density for the quart
+        :param quart_ind:
+        index of quart 0,1,2,3
+        :return:
+        """
         a_list = []
         b_list = []
         opt_list = []
@@ -101,7 +123,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         study_range = np.arange(int(popt[:, 0].max()))
         polynomes_before_list = []
         polynomes_shot_list = []
-        for i in range(self.shape[0]*2):
+        for i in range(self.shape[0] * 2):
             polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
@@ -114,7 +136,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             polynomes_shot_list.append(polynome_shot)
         main_tilt = a_list[0]
         # main_shift = polynomes_before_list[0][0]
-        for i in range(self.shape[0]*2):
+        for i in range(self.shape[0] * 2):
             polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
             polynomes_shot_list[i] *= main_tilt / a_list[i % 4]
             polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
@@ -172,7 +194,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                             if origin > self.wf_time[np.argmax(self.current)]:
                                 continue
 
-                            '''if current_density < current_density_list[-1]:
+                            '''if current_density > current_density_list[-1]:
                                 continue'''
                         origins_list.append(origin)
                         currents_list.append(current)
@@ -257,8 +279,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.draw()
         # t0, d0, t1
         # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
-        bounds = ([0, -1000, -w_image * 0.5],
-                  [w_image * 0.75, 0, 0])
+        bounds = ([0, -1000, -w_image],
+                  [w_image, 0, -w_image * 0.1])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
@@ -523,6 +545,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.close()
 
     def sort_data_dict(self):
+        """
+        The function distributes the experiment data dictionary
+        :return:
+        """
         self.dy = self.data_dict['info']['Value']['dy']
         self.dx = self.data_dict['info']['Value']['dx']
         self.h_foil = self.data_dict['info']['Value']['Thickness']
@@ -540,6 +566,13 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.current = self.data_dict['waveform']['current']
 
     def cross_section(self, z):
+        """
+        The function to calculate the foil cross-section in direction of the current z
+        :param z:
+        distance from the butterfly waist in direction of current in mm
+        :return:
+        cross-section of the foil in square mm
+        """
         s = 0.5 * self.waist + (self.w_foil - self.waist) * z / self.l_foil
         return 2 * s * self.h_foil
 

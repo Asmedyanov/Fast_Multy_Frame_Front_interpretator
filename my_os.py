@@ -69,7 +69,16 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
 
 
 def open_folder():
-    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe/shot47')
+    """
+    The function loads the data of experiment from file dialog
+    the experiment folder includes:
+    'info.xlsx' file with scalar data of experiment
+    'shot*.csv' file with waveforms
+    'before.rtv' bin file with images from xrapid came
+    :return:
+    dict of data
+    """
+    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe/Shot49')
     current_dir = os.curdir
     os.chdir(folder_name)
     files_data = dict()
