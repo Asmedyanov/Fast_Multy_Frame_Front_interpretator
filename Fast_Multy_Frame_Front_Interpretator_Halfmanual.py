@@ -31,6 +31,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         # common preprocessing
         self.save_all_images('common/0.original.png')
         self.shape = self.before_array.shape
+        self.framecount, self.frameheight, self.framewidth= self.shape
         self.before_array = self.get_norm_array(self.before_array)
         self.shot_array = self.get_norm_array(self.shot_array)
         self.save_all_images('common/1.normed.png')
@@ -74,13 +75,23 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.show()
 
     def consider_half(self, quart_ind):
+        """
+        the function considers the half of each of 8 frames which includes the quart
+        :param quart_ind: the number of considering quart
+        """
 
         os.makedirs(f'quart{quart_ind}', exist_ok=True)
-        limit = self.shape[2] // 2
+        limit = self.framewidth // 2
         if quart_ind in [0, 1]:
+            """
+            for the quarts i don't need a reflection. i just cut
+            """
             self.before_half = self.before_array[:, :limit]
             self.shot_half = self.shot_array[:, :limit]
         else:
+            """
+            for the quarts i need to reflect and cut
+            """
             self.before_half = self.before_array[:, limit:]
             self.before_half = np.flip(self.before_half, axis=1)
             self.shot_half = self.shot_array[:, limit:]
@@ -98,7 +109,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         b_list = []
         opt_list = []
 
-        for i in range(self.shape[0]):
+        for i in range(self.framecount):
+            '''
+            consider the quart for each frame
+            '''
             self.get_center_of_image(self.before_half[i], dialog_name=f'Center of quart {quart_ind} camera {i}')
             limit = self.center[0]
             if quart_ind in [0, 3]:
@@ -495,6 +509,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.show()
 
     def get_center_of_image(self, image_array, dialog_name='Center'):
+        """
+        the dialog to choose the horizontal center of image
+        :param image_array:
+        the image as a numpy array
+        :param dialog_name:
+        the line with the dialog message
+        :return:
+        (x,y) of the chosen center as integer
+        """
         fig = plt.figure()
         plt.imshow(image_array)
         plt.title(dialog_name)
@@ -517,6 +540,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         figManager = plt.get_current_fig_manager()
         figManager.window.showMaximized()
         plt.show()
+        return self.center
 
     def save_all_images(self, name):
         fig, ax = plt.subplots(2, 4)

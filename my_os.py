@@ -8,12 +8,25 @@ from scipy.signal import find_peaks
 
 
 def open_xlsx(fname):
+    """
+    the function read the info file of the experiment
+    :param fname: file name
+    :return:
+    pandas data frame
+    """
     data = pd.read_excel(fname)
     data = data.set_index('Parameter')
     return data
 
 
 def open_rtv(fname):
+    """
+    the function read the binary file of the fast-frame xrapid camera
+    :param fname: file name
+    :return:
+    numpy array (4,1024,1360)
+    4 frames
+    """
     file = open(fname, 'rb')
     n = 1024 * 1360
     file_array = np.fromfile(file, dtype='uint16', offset=0x2000, count=n * 4).reshape((4, 1024, 1360))
@@ -28,6 +41,19 @@ def open_rtv(fname):
 
 
 def open_csv(fname, Rogovski_ampl, Rogovski_conv):
+    """
+    the function read the waveform file *.csv:
+    current,synchro:camera and maxwell, voltage divider
+    :param fname: file name
+    :param Rogovski_ampl: coefficient to transform voltage from the Rogovski coil to Amper
+    :param Rogovski_conv: the number of points to smooth the current
+    :return:
+    {
+        'time': current_time,
+        'current': current_amp,
+        'peaks': peak_times
+    }
+    """
     waveform = pd.read_csv(fname)
     sinc_time = waveform['s.1'].values * 1.0e6
     sinc_volt = np.abs(np.gradient(waveform['Volts.1']))
