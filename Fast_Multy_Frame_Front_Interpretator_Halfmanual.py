@@ -31,7 +31,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         # common preprocessing
         self.save_all_images('common/0.original.png')
         self.shape = self.before_array.shape
-        self.framecount, self.frameheight, self.framewidth= self.shape
+        self.framecount, self.frameheight, self.framewidth = self.shape
         self.before_array = self.get_norm_array(self.before_array)
         self.shot_array = self.get_norm_array(self.shot_array)
         self.save_all_images('common/1.normed.png')
@@ -292,9 +292,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.plot_poly, = ax[2].plot(x_center, self.y_center, 'r')
         plt.draw()
         # t0, d0, t1
+        # d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p
         # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
-        bounds = ([0, -1000, -w_image],
-                  [w_image, 0, 0])
+        bounds = ([-1000, -w_image, 0, 0, -w_image, 0, -w_image, 0, -w_image],
+                  [0, 0, w_image, w_image, 0, w_image, 0, w_image, 0])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
@@ -343,21 +344,18 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                         except Exception as ex:
                             pass  # print(ex)
 
-                    def f_bi_power(t, t0, d, a1, power1, power2):
-                        return f_bipower(t, t0, a, b, d, a1, power1, power2)
+                    def f_hard_core_local(x, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p):
+                        return f_hard_core(x, a, b, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p)
 
-                    def f_squre_line_local(t, t0, d0, t1):
-                        return f_square_line(t, t0, a, b, d0, t1)
-
-                    popt, perr = curve_fit(f_squre_line_local, front_list_x, front_list_y,
+                    popt, perr = curve_fit(f_hard_core_local, front_list_x, front_list_y,
                                            bounds=bounds)
                     # t0, d, a1, power1, power2 = popt
-                    t0, d0, t1 = popt
+                    d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p = popt
                     self.optima = popt
                     # print(popt)
                     # print(t0)
                     # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
-                    poly_y = f_squre_line_local(x_center, t0, d0, t1)
+                    poly_y = f_hard_core_local(x_center, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p)
                     poly_y = np.where(poly_y > 0, poly_y, 0)
                     poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
                     self.poly_y = poly_y
@@ -382,21 +380,18 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 except Exception as ex:
                     pass  # print(ex)
 
-            def f_bi_power(t, t0, d, a1, power1, power2):
-                return f_bipower(t, t0, a, b, d, a1, power1, power2)
+            def f_hard_core_local(x, d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p):
+                return f_hard_core(x, a, b, d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p)
 
-            def f_squre_line_local(t, t0, d0, a1):
-                return f_square_line(t, t0, a, b, d0, a1)
-
-            popt, perr = curve_fit(f_squre_line_local, front_list_x, front_list_y,
+            popt, perr = curve_fit(f_hard_core_local, front_list_x, front_list_y,
                                    bounds=bounds)
             # t0, d, a1, power1, power2 = popt
-            t0, d0, a1 = popt
+            d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p = popt
             self.optima = popt
-            # print(popt)
+            print(popt)
             # print(t0)
             # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
-            poly_y = f_squre_line_local(x_center, t0, d0, a1)
+            poly_y = f_hard_core_local(x_center, d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p)
             poly_y = np.where(poly_y > 0, poly_y, 0)
             poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
             self.poly_y = poly_y

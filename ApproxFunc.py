@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import where
+from numpy import where,square
 
 
 def f_line(x, a, b):
@@ -46,28 +46,34 @@ def f_square_line_time_reversed(x, a, c):
     return ret
 
 
-def f_hard_core(x, a0, b0, d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p):
+def f_hard_core(x, a0, b0, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p):
+    x0_l = x0_s+xd0_l
+    x1_l = x1_s+xd1_l
+    x0_v = x0_l + xd0_v
+    x1_v = x1_l + xd1_v
+    x0_p = x0_v + xd0_p
+    x1_p = x1_v + xd1_p
     a_s = a0 / (2.0 * (x1_s - x0_s))
-    c_s = a0 * x1_s + b0 + d0 - a_s * (x1_s - x0_s) ** 2
+    c_s = a0 * x1_s + b0 + d0 - a_s * square(x1_s - x0_s)
     a_l = a_s * (x1_l - x0_s) / (x1_l - x0_l)
-    c_l = a_s * (x1_l - x0_s) ** 2.0 + c_s - a_l * (x1_l - x0_l) ** 2.0
+    c_l = a_s * square(x1_l - x0_s) + c_s - a_l * square(x1_l - x0_l)
     a_v = a_l * (x1_v - x0_l) / (x1_v - x0_v)
-    c_v = a_l * (x1_v - x0_l) ** 2.0 + c_l - a_v * (x1_v - x0_v) ** 2.0
+    c_v = a_l * square(x1_v - x0_l) + c_l - a_v * square(x1_v - x0_v)
     a_p = a_l * (x1_p - x0_v) / (x1_p - x0_p)
-    c_p = a_l * (x1_p - x0_v) ** 2.0 + c_v - a_p * (x1_p - x0_p) ** 2.0
+    c_p = a_l * square(x1_p - x0_v) + c_v - a_p * square(x1_p - x0_p)
     ret = where(
-        x<x1_p,
-        a_p*(x-x0_p)**2.0+c_p,
+        x < x1_p,
+        a_p * square(x - x0_p) + c_p,
         where(
-            x<x1_v,
-            a_v * (x - x0_v) ** 2.0 + c_v,
+            x < x1_v,
+            a_v * square(x - x0_v) + c_v,
             where(
                 x < x1_l,
-                a_l * (x - x0_l) ** 2.0 + c_l,
+                a_l * square(x - x0_l) + c_l,
                 where(
                     x < x1_s,
-                    a_s * (x - x0_s) ** 2.0 + c_s,
-                    a0*x+b0+d0
+                    a_s * square(x - x0_s) + c_s,
+                    a0 * x + b0 + d0
                 )
             )
         )
