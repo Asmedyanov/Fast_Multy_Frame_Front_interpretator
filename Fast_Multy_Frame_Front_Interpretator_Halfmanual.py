@@ -188,7 +188,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
                 print(c)
                 print(rel_err)
-                rel_err = rel_err[1] * 100
+                rel_err = rel_err.sum() * 100
                 # poly_func = np.poly1d(poly_coef)
                 # time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
                 dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
@@ -294,7 +294,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         # t0, d0, t1
         # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
         bounds = ([0, -1000, -w_image],
-                  [w_image, 0, -w_image * 0.1])
+                  [w_image, 0, 0])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
