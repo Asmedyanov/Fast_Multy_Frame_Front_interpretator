@@ -134,15 +134,16 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             opt_list.append(opt_1)
             opt_list.append(opt_2)
         popt = np.array(opt_list)
-        study_range = np.arange(int(popt[:, 0].max()))
+        # study_range = np.arange(int(popt[:, 0].max()))
+        study_range = np.arange(self.frameheight // 2)
         polynomes_before_list = []
         polynomes_shot_list = []
         for i in range(self.shape[0] * 2):
             polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
-                # y = f_bipower(t, popt[i, 0], a_list[i], b_list[i], popt[i, 1], popt[i, 2], popt[i, 3], popt[i, 4])
-                y = f_square_line(t, popt[i, 0], a_list[i % 4], b_list[i % 4], popt[i, 1], popt[i, 2])
+                y = f_hard_core(t, a_list[i % 4], b_list[i % 4], popt[i, 0], popt[i, 1], popt[i, 2], popt[i, 3],
+                                popt[i, 4], popt[i, 5], popt[i, 6], popt[i, 7], popt[i, 8])
                 return y
 
             polynome_shot = my_func_(study_range)
@@ -188,7 +189,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
                 print(c)
                 print(rel_err)
-                rel_err = rel_err.sum() * 100
+                rel_err = rel_err[-1] * 100
                 # poly_func = np.poly1d(poly_coef)
                 # time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
                 dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
@@ -294,8 +295,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         # t0, d0, t1
         # d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p
         # bounds = ([1, -200, 0, 0.9, 1.5, ], [w_image * 0.75, 0, 100, 1.1, 4.0, ])
-        bounds = ([-1000, -w_image, 0, 0, -w_image, 0, -w_image, 0, -w_image],
-                  [0, 0, w_image, w_image, 0, w_image, 0, w_image, 0])
+        bounds = ([-1000, -w_image, 0, 0, -w_image * 0.5, 0, -w_image * 0.5, 0, -w_image * 0.5],
+                  [0, 0, w_image, w_image * 0.5, 0, w_image * 0.5, 0, w_image * 0.5, 0])
 
         def mouse_event_scroll(event):
             if event.inaxes is not None:
@@ -388,7 +389,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             # t0, d, a1, power1, power2 = popt
             d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p = popt
             self.optima = popt
-            print(popt)
+            # print(popt)
             # print(t0)
             # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
             poly_y = f_hard_core_local(x_center, d0, x0_s, x1_s, x0_l, x1_l, x0_v, x1_v, x0_p, x1_p)
