@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import where,square
+from numpy import where, square
 
 
 def f_line(x, a, b):
@@ -47,8 +47,8 @@ def f_square_line_time_reversed(x, a, c):
 
 
 def f_hard_core(x, a0, b0, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd1_p):
-    x0_l = x0_s+xd0_l
-    x1_l = x1_s+xd1_l
+    x0_l = x0_s + xd0_l
+    x1_l = x1_s + xd1_l
     x0_v = x0_l + xd0_v
     x1_v = x1_l + xd1_v
     x0_p = x0_v + xd0_p
@@ -78,5 +78,25 @@ def f_hard_core(x, a0, b0, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd
             )
         )
 
+    )
+    return ret
+
+
+def f_free_style(x, a0, b0, da_s, db_s, db_v, x0, x_p, dxt):
+    x_v = x_p + dxt
+    a_s = a0 + da_s
+    b_s = b0 + db_s
+    b_v = b0 + db_v
+    a_v = (a_s * x_v + b_s - b_v) / x_v
+    c = a_v * 0.5 / (x_p - x0)
+    d = a_v * x_p + b_v - c * square(x_p - x0)
+    ret = where(
+        x < x_p,
+        c * square(x - x0) + d,
+        where(
+            x < x_v,
+            a_v * x + b_v,
+            a_s * x + b_s
+        )
     )
     return ret
