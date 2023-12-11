@@ -83,6 +83,26 @@ def f_hard_core(x, a0, b0, d0, x0_s, x1_s, xd0_l, xd1_l, xd0_v, xd1_v, xd0_p, xd
 
 
 def f_free_style(x, a0, b0, da_s, db_s, db_v, x0, x_p, dxt):
+    """
+    the function of 2 phase transitions:
+    solid+liquid: linear 1
+    vapour: linear 2
+    plasma: parabola
+    :param x:
+    coordinate
+    :param a0:
+    tilt of before image
+    :param b0:
+    shift of before image
+    :param da_s:
+
+    :param db_s:
+    :param db_v:
+    :param x0:
+    :param x_p:
+    :param dxt:
+    :return:
+    """
     x_v = x_p + dxt
     a_s = a0 + da_s
     b_s = b0 + db_s

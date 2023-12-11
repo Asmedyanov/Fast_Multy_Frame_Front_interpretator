@@ -142,8 +142,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
 
             def my_func_(t):
-                y = f_hard_core(t, a_list[i % 4], b_list[i % 4], popt[i, 0], popt[i, 1], popt[i, 2], popt[i, 3],
-                                popt[i, 4], popt[i, 5], popt[i, 6], popt[i, 7], popt[i, 8])
+                y = f_free_style(t, a_list[i % 4], b_list[i % 4], popt[i, 0], popt[i, 1], popt[i, 2], popt[i, 3],
+                                popt[i, 4], popt[i, 5])
                 return y
 
             polynome_shot = my_func_(study_range)
