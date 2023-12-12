@@ -104,7 +104,7 @@ def open_folder():
     :return:
     dict of data
     """
-    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe/Shot49')
+    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe')
     current_dir = os.curdir
     os.chdir(folder_name)
     files_data = dict()

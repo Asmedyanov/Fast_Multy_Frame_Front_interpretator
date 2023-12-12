@@ -95,13 +95,19 @@ def f_free_style(x, a0, b0, da_s, db_s, db_v, x0, x_p, dxt):
     :param b0:
     shift of before image
     :param da_s:
-
+    differences between a_s (tilt of solid state) and a0
     :param db_s:
+    difference between b_s (shift of solid state) and b0
     :param db_v:
+    difference between b_v (shift of vapour state) and b0
     :param x0:
+    the center of plasmas parabola
     :param x_p:
+    coordinate of the plasma phase transition
     :param dxt:
+    difference between x_p and x_v ( coordinate of the vapour phase transition)
     :return:
+    the coordinate of the approximated front
     """
     x_v = x_p + dxt
     a_s = a0 + da_s

@@ -24,9 +24,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         """The class which includes the main data processing"""
         self.data_dict = open_folder()
         self.sort_data_dict()
-        self.starts = self.peak_times[::2]
-        self.starts = self.starts[self.sequence]
-        self.stops = self.peak_times[1::2]
+        self.image_preprocessing()
+        self.current_action_integral_processing()
+
+    def image_preprocessing(self):
         os.makedirs('common', exist_ok=True)
         # common preprocessing
         self.save_all_images('common/0.original.png')
@@ -55,17 +56,19 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
 
         self.save_all_images('common/5.swapped.png')
+
+    def current_action_integral_processing(self):
         # separated processing by quarts
-        self.action_integral_list = []
+        action_integral_list = []
         for i in [0, 1, 2, 3]:
             try:
-                self.consider_half(i)
+                df = self.current_action_integral_quart(i)
+                plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
+                action_integral_list.append(df)
             except Exception as ex:
                 print(ex)
-        plt.clf()
-        for i, df in enumerate(self.action_integral_list):
-            df = df.sort_values('j_10e8_A/cm^2')
-            plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
+        action_integral_df = pd.concat(action_integral_list)
+        action_integral_df.to_csv('common/6.action_integral.csv')
         plt.legend()
         plt.grid()
         plt.title('Action integral')
@@ -73,6 +76,130 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.ylabel('$h, 10^{9} A^{2}s/cm^4$')
         plt.savefig('common/6.action_integral.png')
         plt.show()
+
+    def current_action_integral_quart(self, quart_index):
+        quart_image_array_before, quart_image_array_shot = self.quart_flip(quart_index)
+        self.tilt_before_list = []
+        self.shift_before_list = []
+        self.popt_front_1_list = []
+        self.popt_front_2_list = []
+        for frame_index in range(self.framecount):
+            counterline = f'Quart {quart_index + 1} Frame {frame_index + 1}'
+            left_border_x, left_border_y, right_border_x, right_border_y = self.quart_borders_dialog(
+                quart_image_array_before[frame_index],
+                dialog_name=f'{counterline} left&right')
+            image_before = quart_image_array_before[frame_index, :, left_border_x:right_border_x]
+            tilt_before, shift_before = self.recognize_front_dialod(image_before, title=f'{counterline} before line')
+            self.tilt_before_list.append(tilt_before)
+            self.shift_before_list.append(shift_before)
+
+            image_shot = quart_image_array_shot[frame_index, :, left_border_x:right_border_x]
+            popt_1 = self.recognize_front_dialod(image_shot, mode='shot', title=f'{counterline} front 1')
+            popt_2 = self.recognize_front_dialod(image_shot, mode='shot', title=f'{counterline} front 2')
+            self.popt_front_1_list.append(popt_1)
+            self.popt_front_2_list.append(popt_2)
+
+        ret_df = pd.DataFrame()
+        return ret_df
+
+    def recognize_front_dialod(self, image_array, mode='line', title='front'):
+        fig, ax = plt.subplots(2, 2)
+        fig.suptitle(title)
+        ret = None
+        ax[0, 0].imshow(image_array)
+        ax[0, 0].set_ylabel('Raw data')
+        ax[1, 0].imshow(image_array)
+        ax[1, 0].set_ylabel('Approximation')
+        image_hight,image_width  = image_array.shape
+        x = np.arange(image_width, dtype=int)
+        streak_tilt = (self.right_border_y - self.left_border_y) / image_width
+        streak_shift = self.left_border_y
+        y = (streak_tilt * x + streak_shift).astype(int)
+        plot_streak_center, = ax[0, 0].plot(x, y)
+
+        plt.tight_layout()
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
+        plt.show()
+        return ret
+
+    def quart_borders_dialog(self, image_array, dialog_name='Choose the line along the considering front'):
+        """
+                the dialog to choose left and right border of considering quart image
+                :param image_array:
+                the image as a numpy array
+                :param dialog_name:
+                the line with the dialog message
+                :return:
+                left_border_x, left_border_y, right_border_x, right_border_y of the chosen center as integer
+                """
+        self.left_border_x, self.right_border_x = self.frameheight // 2, self.frameheight - 5
+        self.left_border_y, self.right_border_y = self.framewidth // 2 - 5, 0
+        try:
+            fig = plt.figure()
+            plt.imshow(image_array)
+            plt.title(dialog_name)
+            front_plot, = plt.plot([self.left_border_x, self.right_border_x],
+                                   [self.left_border_y, self.right_border_y], '-or')
+
+            def refresh():
+                if self.left_border_x > self.right_border_x:
+                    a = self.left_border_x
+                    b = self.left_border_y
+                    self.left_border_x = self.right_border_x
+                    self.left_border_y = self.right_border_y
+                    self.right_border_x = a
+                    self.right_border_y = b
+                front_plot.set_data([self.left_border_x, self.right_border_x],
+                                    [self.left_border_y, self.right_border_y])
+                plt.draw()
+
+            def mouse_event_press(event):
+                self.left_border_x, self.left_border_y = event.xdata, event.ydata
+                refresh()
+
+            def mouse_event_release(event):
+                self.right_border_x, self.right_border_y = event.xdata, event.ydata
+                refresh()
+
+            self.cid_1 = fig.canvas.mpl_connect('button_press_event', mouse_event_press)
+            self.cid_2 = fig.canvas.mpl_connect('button_release_event', mouse_event_release)
+            plt.tight_layout()
+            figManager = plt.get_current_fig_manager()
+            figManager.window.showMaximized()
+            plt.show()
+        except Exception as ex:
+            print(f'quart_borders_dialog {ex}')
+        return int(self.left_border_x), int(self.left_border_y), \
+               int(self.right_border_x), int(self.right_border_y)
+
+    def quart_flip(self, quart_index):
+        """
+        .---.---.
+        |   |   |
+        | 1 | 0 |
+        |   |   |
+        .---.---.
+        |   |   |
+        | 2 | 3 |
+        |   |   |
+        .---.---.
+        :param quart_index:
+        :return:
+        """
+
+        ret_before = np.copy(self.before_array)
+        ret_shot = np.copy(self.shot_array)
+        if quart_index in [2, 3]:
+            ret_before = np.flip(ret_before, axis=1)
+            ret_shot = np.flip(ret_before, axis=1)
+        if quart_index in [1, 2]:
+            ret_before = np.flip(ret_before, axis=2)
+            ret_shot = np.flip(ret_before, axis=2)
+        limit = self.framewidth // 2
+        ret_before = ret_before[:, :limit]
+        ret_shot = ret_shot[:, :limit]
+        return ret_before, ret_shot
 
     def consider_half(self, quart_ind):
         """
@@ -143,7 +270,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
             def my_func_(t):
                 y = f_free_style(t, a_list[i % 4], b_list[i % 4], popt[i, 0], popt[i, 1], popt[i, 2], popt[i, 3],
-                                popt[i, 4], popt[i, 5])
+                                 popt[i, 4], popt[i, 5])
                 return y
 
             polynome_shot = my_func_(study_range)
@@ -276,10 +403,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.y_center_plot, = ax[0].plot(x_center, self.y_center)
         # ax[0].plot(x_center, y_down)
         profiles_values = []
-        profiles_x = x_center[self.w_smooth:-self.w_smooth]
+        # profiles_x = x_center[self.w_smooth:-self.w_smooth]
+        profiles_x = x_center
         profiles_plots_list = []
+        conv_n = self.w_smooth
+        conv_a = np.ones(conv_n) / float(conv_n)
         for x in profiles_x:
-            profile = image_array[self.y_up[x]:self.y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            '''try:
+                profile = image_array[self.y_up[x]:self.y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            except:'''
+            profile = np.copy(image_array[self.y_up[x]:self.y_down[x], x])
+            profile = np.convolve(profile, conv_a, mode='same')
             profile -= profile.min()
             profile /= profile.max()
             if x % 40 == 0:
@@ -317,10 +451,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                         self.y_center_plot.set_ydata(self.y_center)
                         self.y_up_plot.set_ydata(self.y_up)
                         self.y_down_plot.set_ydata(self.y_down)
-
+                        conv_n = self.w_smooth
+                        conv_a = np.ones(conv_n) / float(conv_n)
                         for i, x in enumerate(profiles_x):
-                            profile = image_array[self.y_up[x]:self.y_down[x],
-                                      x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+                            '''try:
+                                profile = image_array[self.y_up[x]:self.y_down[x],
+                                          x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+                            except:'''
+                            profile = np.copy(image_array[self.y_up[x]:self.y_down[x], x])
+
+                            profile = np.convolve(profile, conv_a, mode='same')
+
                             # profile = np.abs(np.gradient(profile))
                             profile -= profile.min()
                             profile /= profile.max()
@@ -427,9 +568,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         ax[0].plot(x_center, y_up)
         ax[0].plot(x_center, y_down)
         profiles_values = []
-        profiles_x = x_center[self.w_smooth:-self.w_smooth]
+        profiles_x = x_center
+        conv_n = self.w_smooth
+        conv_a = np.ones(conv_n) / float(conv_n)
         for x in profiles_x:
-            profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            '''try:
+                profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
+            except:'''
+            profile = np.copy(image_array[y_up[x]:y_down[x], x])
+            profile = np.convolve(profile, conv_a, mode='same')
             profile -= profile.min()
             profile /= profile.mean()
             if x % 100 == 5:
@@ -582,6 +729,9 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.peak_times = self.data_dict['waveform']['peaks']
         self.wf_time = self.data_dict['waveform']['time']
         self.current = self.data_dict['waveform']['current']
+        self.starts = self.peak_times[::2]
+        self.starts = self.starts[self.sequence]
+        self.stops = self.peak_times[1::2]
 
     def cross_section(self, z):
         """
