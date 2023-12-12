@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.fft import fft2, ifft2
 from scipy.ndimage.filters import maximum_filter
+import cv2
 from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
 
 from ApproxFunc import *
@@ -83,6 +84,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.shift_before_list = []
         self.popt_front_1_list = []
         self.popt_front_2_list = []
+        self.fronts_list = []
+        self.before_front_list = []
         for frame_index in range(self.framecount):
             counter_line = f'Quart {quart_index + 1} Frame {frame_index + 1}'
             left_border_x, left_border_y, right_border_x, right_border_y = self.quart_borders_dialog(
@@ -104,7 +107,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
     def recognize_front_dialog(self, image_array, mode='line', title='front'):
         # fig, ax = plt.subplots(2, 2)
+        image_height, image_width = image_array.shape
+
         fig = plt.figure()
+        plt.tight_layout()
         shape = (2, 3)
         ax = {
             'Raw data': plt.subplot2grid(shape=shape, loc=(0, 0), rowspan=2),
@@ -115,49 +121,158 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         for my_key, my_ax in ax.items():
             my_ax.set_ylabel(my_key)
         fig.suptitle(title)
-        ret = None
+        self.ret = None
         ax['Raw data'].imshow(image_array)
         ax['Approximation'].imshow(image_array)
-        image_height, image_width = image_array.shape
+
         x = np.arange(image_width, dtype=int)
         streak_tilt = (self.right_border_y - self.left_border_y) / image_width
-        streak_shift = self.left_border_y
-        y = (streak_tilt * x + streak_shift).astype(int)
+        self.streak_shift = self.left_border_y
+        y = (streak_tilt * x + self.streak_shift).astype(int)
         y = np.where(y >= image_height, image_height - 1, y)
         y = np.where(y < 0, 0, y)
+        self.y = y
         y_down = y + self.w_front
         y_down = np.where(y_down >= image_height, image_height - 1, y_down)
+        self.y_down = y_down
         y_up = y - self.w_front
         y_up = np.where(y_up < 0, 0, y_up)
+        self.y_up = y_up
         plot_streak_center, = ax['Raw data'].plot(x, y)
         plot_streak_up, = ax['Raw data'].plot(x, y_up)
         plot_streak_down, = ax['Raw data'].plot(x, y_down)
-        level = 0.5
+        self.level = 0.5
         plot_level, = ax['Profiles'].plot([0, 2.0 * self.w_front],
-                                          [level, level], '-or')
+                                          [self.level, self.level], '-or')
         profiles_list = []
         front_points_list = []
         profiles_plot_list = []
-        conv_a = np.ones(self.w_smooth) / float(self.w_smooth)
-        for index in x:
-            profile = np.copy(image_array[y_up[index]:y_down[index], index])
+        plot_index_list = []
 
+        def preprocess_profile(profile):
             profile = np.convolve(profile, conv_a, mode='same')
             profile -= profile[self.w_smooth:-self.w_smooth].min()
 
             profile /= profile.max()
-            front_coordinate = np.argwhere(profile > level).max() + y_up[index]
+            profile = np.where(profile < 0, 0, profile)
+            return profile
+
+        conv_a = np.ones(self.w_smooth) / float(self.w_smooth)
+        for index in x:
+            profile = np.copy(image_array[y_up[index]:y_down[index], index])
+            profile = preprocess_profile(profile)
+            front_coordinate = np.argwhere(profile > self.level).max() + y_up[index]
             front_points_list.append(front_coordinate)
             profiles_list.append(profile)
             if index % (image_width // 7) == 0:
-                profiles_plot_list.append(ax[0, 1].plot(profile)[0])
+                profiles_plot_list.append(ax['Profiles'].plot(profile)[0])
+                plot_index_list.append(index)
         plot_front_points, = ax['Raw data'].plot(front_points_list, 'or')
+        if mode == 'line':
+            popt, pcov = curve_fit(f_line, x, front_points_list)
+            approximation = popt[0] * x + popt[1]
+            front = popt[1] - approximation
+            self.ret = popt
+            if len(self.before_front_list):
+                l1 = approximation.size
+                l2 = self.before_front_list[0].size
+                l = min([l1, l2])
+                xp = np.arange(l)
+                p1 = np.array([xp, approximation[:l]]).transpose()
+                p2 = np.array([xp, self.before_front_list[0][:l]]).transpose()
+                self.homography, mask = cv2.findHomography(p2, p1, cv2.RANSAC)
+            self.before_front_list.append(approximation)
+        a = -1
+        b = 100
+        if len(self.tilt_before_list):
+            a = self.tilt_before_list[-1]
+            b = self.shift_before_list[-1]
+        bounds = ([a, -image_height, -image_height, -image_width, 0, 0],
+                  [0, 0, 0, 0, image_height, image_width])
+
+        def f_free_style_local(t, da_s, db_s, db_v, x0, x_p, dxt):
+            return f_free_style(t, a, b, da_s, db_s, db_v, x0, x_p, dxt)
+
+        if mode == 'shot':
+
+            popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
+            da_s, db_s, db_v, x0, x_p, dxt = popt
+            approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
+            self.ret = popt
+            front = b - approximation
+            if len(self.fronts_list) > 1:
+                ax['Fronts'].plot(self.fronts_list[-1], '-.')
+                ax['Fronts'].plot(self.fronts_list[-2], '-.')
+            if len(self.tilt_before_list)>1:
+
+
+            self.fronts_list.append(front)
+            self.plot_front_before, = ax['Fronts'].plot(-a * x)
+
+        self.plot_front, = ax['Fronts'].plot(front)
+        self.plot_approximation, = ax['Approximation'].plot(approximation, 'r')
+
+        def refresh():
+            for index in x:
+                profile = np.copy(image_array[self.y_up[index]:self.y_down[index], index])
+                profile = preprocess_profile(profile)
+                profiles_list[index] = profile
+                front_coordinate = np.argwhere(profile > self.level).max() + self.y_up[index]
+                front_points_list[index] = front_coordinate
+            if mode == 'line':
+                popt, pcov = curve_fit(f_line, x, front_points_list)
+                approximation = popt[0] * x + popt[1]
+                front = popt[1] - approximation
+
+                self.ret = popt
+            if mode == 'shot':
+                popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
+                da_s, db_s, db_v, x0, x_p, dxt = popt
+                approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
+                self.ret = popt
+                front = b - approximation
+                self.fronts_list[-1] = front
+
+            self.plot_front.set_ydata(front)
+            self.plot_approximation
+            self.plot_approximation.set_ydata(approximation)
+            plot_streak_center.set_data(x, self.y)
+            plot_streak_up.set_data(x, self.y_up)
+            plot_streak_down.set_data(x, self.y_down)
+            for i, plot in enumerate(profiles_plot_list):
+                profile = profiles_list[plot_index_list[i]]
+                plot.set_data(np.arange(profile.size), profile)
+            plot_front_points.set_data(np.arange(len(front_points_list)), front_points_list)
+            plot_level.set_ydata([self.level, self.level])
+            plt.draw()
+
+        def mouse_event_scroll(event):
+            increment = 1 if event.button == 'up' else -1
+            if event.inaxes.get_ylabel() == 'Raw data':
+                self.streak_shift += increment * 10
+                y = (streak_tilt * x + self.streak_shift).astype(int)
+                y = np.where(y >= image_height, image_height - 1, y)
+                y = np.where(y < 0, 0, y)
+                self.y = y
+                y_down = y + self.w_front
+                y_down = np.where(y_down >= image_height, image_height - 1, y_down)
+                self.y_down = y_down
+                y_up = y - self.w_front
+                y_up = np.where(y_up < 0, 0, y_up)
+                self.y_up = y_up
+            if event.inaxes.get_ylabel() == 'Profiles':
+                level = self.level + increment * 5.0e-2
+                if (level > 0) & (level < 1.0):
+                    self.level = level
+            refresh()
+
+        self.cid = fig.canvas.mpl_connect('scroll_event', mouse_event_scroll)
 
         figManager = plt.get_current_fig_manager()
         figManager.window.showMaximized()
         plt.tight_layout()
         plt.show()
-        # return ret
+        return self.ret
 
     def quart_borders_dialog(self, image_array, dialog_name='Choose the line along the considering front'):
         """
