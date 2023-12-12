@@ -84,44 +84,80 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.popt_front_1_list = []
         self.popt_front_2_list = []
         for frame_index in range(self.framecount):
-            counterline = f'Quart {quart_index + 1} Frame {frame_index + 1}'
+            counter_line = f'Quart {quart_index + 1} Frame {frame_index + 1}'
             left_border_x, left_border_y, right_border_x, right_border_y = self.quart_borders_dialog(
                 quart_image_array_before[frame_index],
-                dialog_name=f'{counterline} left&right')
+                dialog_name=f'{counter_line} left&right')
             image_before = quart_image_array_before[frame_index, :, left_border_x:right_border_x]
-            tilt_before, shift_before = self.recognize_front_dialod(image_before, title=f'{counterline} before line')
+            image_shot = quart_image_array_shot[frame_index, :, left_border_x:right_border_x]
+            tilt_before, shift_before = self.recognize_front_dialog(image_before, title=f'{counter_line} before line')
             self.tilt_before_list.append(tilt_before)
             self.shift_before_list.append(shift_before)
 
-            image_shot = quart_image_array_shot[frame_index, :, left_border_x:right_border_x]
-            popt_1 = self.recognize_front_dialod(image_shot, mode='shot', title=f'{counterline} front 1')
-            popt_2 = self.recognize_front_dialod(image_shot, mode='shot', title=f'{counterline} front 2')
+            popt_1 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 1')
+            popt_2 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 2')
             self.popt_front_1_list.append(popt_1)
             self.popt_front_2_list.append(popt_2)
 
         ret_df = pd.DataFrame()
         return ret_df
 
-    def recognize_front_dialod(self, image_array, mode='line', title='front'):
-        fig, ax = plt.subplots(2, 2)
+    def recognize_front_dialog(self, image_array, mode='line', title='front'):
+        # fig, ax = plt.subplots(2, 2)
+        fig = plt.figure()
+        shape = (2, 3)
+        ax = {
+            'Raw data': plt.subplot2grid(shape=shape, loc=(0, 0), rowspan=2),
+            'Profiles': plt.subplot2grid(shape=shape, loc=(0, 1)),
+            'Fronts': plt.subplot2grid(shape=shape, loc=(1, 1)),
+            'Approximation': plt.subplot2grid(shape=shape, loc=(0, 2), rowspan=2),
+        }
+        for my_key, my_ax in ax.items():
+            my_ax.set_ylabel(my_key)
         fig.suptitle(title)
         ret = None
-        ax[0, 0].imshow(image_array)
-        ax[0, 0].set_ylabel('Raw data')
-        ax[1, 0].imshow(image_array)
-        ax[1, 0].set_ylabel('Approximation')
-        image_hight,image_width  = image_array.shape
+        ax['Raw data'].imshow(image_array)
+        ax['Approximation'].imshow(image_array)
+        image_height, image_width = image_array.shape
         x = np.arange(image_width, dtype=int)
         streak_tilt = (self.right_border_y - self.left_border_y) / image_width
         streak_shift = self.left_border_y
         y = (streak_tilt * x + streak_shift).astype(int)
-        plot_streak_center, = ax[0, 0].plot(x, y)
+        y = np.where(y >= image_height, image_height - 1, y)
+        y = np.where(y < 0, 0, y)
+        y_down = y + self.w_front
+        y_down = np.where(y_down >= image_height, image_height - 1, y_down)
+        y_up = y - self.w_front
+        y_up = np.where(y_up < 0, 0, y_up)
+        plot_streak_center, = ax['Raw data'].plot(x, y)
+        plot_streak_up, = ax['Raw data'].plot(x, y_up)
+        plot_streak_down, = ax['Raw data'].plot(x, y_down)
+        level = 0.5
+        plot_level, = ax['Profiles'].plot([0, 2.0 * self.w_front],
+                                          [level, level], '-or')
+        profiles_list = []
+        front_points_list = []
+        profiles_plot_list = []
+        conv_a = np.ones(self.w_smooth) / float(self.w_smooth)
+        for index in x:
+            profile = np.copy(image_array[y_up[index]:y_down[index], index])
 
-        plt.tight_layout()
+            profile = np.convolve(profile, conv_a, mode='same')
+            profile -= profile[self.w_smooth:-self.w_smooth].min()
+
+            profile /= profile.max()
+            front_coordinate = np.argwhere(profile > level).max() + y_up[index]
+            front_points_list.append(front_coordinate)
+            profiles_list.append(profile)
+            if index % (image_width // 7) == 0:
+                profiles_plot_list.append(ax[0, 1].plot(profile)[0])
+        plot_front_points, = ax['Raw data'].plot(front_points_list, 'or')
+
         figManager = plt.get_current_fig_manager()
         figManager.window.showMaximized()
+        plt.tight_layout()
         plt.show()
-        return ret
+        # return ret
 
     def quart_borders_dialog(self, image_array, dialog_name='Choose the line along the considering front'):
         """

@@ -81,11 +81,11 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     main_shift = current_time[current_start]
     peak_times -= main_shift
     current_time -= main_shift
-    plt.plot(current_time, current_amp/current_amp.max())
+    '''plt.plot(current_time, current_amp/current_amp.max())
     plt.plot(sinc_time, sinc_volt/sinc_volt.max())
     plt.plot(sinc_time[peaks], sinc_volt[peaks]/sinc_volt.max(),'o')
     plt.plot(peak_times, current_amp[peaks]/current_amp.max(),'o')
-    plt.show()
+    plt.show()'''
     ret = {
         'time': current_time,
         'current': current_amp,
