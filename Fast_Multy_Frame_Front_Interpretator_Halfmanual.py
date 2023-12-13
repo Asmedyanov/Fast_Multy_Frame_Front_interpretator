@@ -105,7 +105,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             # self.popt_front_1_list.append(popt_1)
             # self.popt_front_2_list.append(popt_2)
         origin_list, good_index_list = self.get_origin(self.expansion_list, self.starts)
-        good_origins = np.array(origin_list)[good_index_list]
+        good_origins = np.array(origin_list)
         cross_section = self.cross_section(self.study_range * self.dx)[good_index_list]
         current_list = []
         current_density_list = []
@@ -142,25 +142,49 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         time = starts
         origins_list = []
         rel_err_origin_index_list = []
+        rel_err_list = []
         for i, dep in enumerate(expansion_array):
             try:
-                dep_loc = dep[np.argwhere(dep > 0)[:, 0]]
-                time_loc = time[np.argwhere(dep > 0)[:, 0]]
-                bounds = ([0, time[0] * 1.0e-2], [1.0e6, time[-1]])
-                popt, pcov = curve_fit(f_square_line_time_reversed, dep_loc, time_loc, bounds=bounds)
+                df_dep = pd.DataFrame(
+                    {
+                        'time': time,
+                        'dep': dep
+                    }
+                )
+
+                dep_loc = df_dep['dep'].values
+                time_loc = df_dep['time'].values
+                if dep_loc.max() == 0:
+                    continue
+                arg_approx = np.argwhere(dep_loc > 0).min()
+                if arg_approx > 0:
+                    arg_approx -= 1
+                dep_loc = dep_loc[arg_approx:]
+                time_loc = time_loc[arg_approx:]
+                if dep_loc.size < 3:
+                    continue
+                '''bounds = ([0, 0], [1.0e6, time_loc[-1]])
+                if len(origins_list) > 0:
+                    bounds = ([0, origins_list[-1]], [1.0e6, time_loc[-1]])'''
+                popt, pcov = curve_fit(f_square_line_time_reversed, dep_loc, time_loc)
                 a, c = popt
-                rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
-                rel_err = rel_err[-1] * 100
                 dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
                 time_reg = f_square_line_time_reversed(dep_reg, a, c)
-                origins_list.append(c)
-                if (rel_err < 20):
+                rel_err = np.sqrt(np.square(f_square_line_time_reversed(dep_loc, a, c) / time_loc - 1).mean())
+                rel_err_list.append(rel_err)
+
+                if (rel_err < 0.2):
                     rel_err_origin_index_list.append(i)
-                if i % 10 == 0:
+                    origins_list.append(c)
+                if (i % 20 == 0):
                     plt.plot(time_loc, dep_loc, 'o')
                     plt.plot(time_reg, dep_reg)
+
             except Exception as ex:
                 print(ex)
+
+        plt.show()
+        plt.plot(rel_err_list)
         plt.show()
         return origins_list, rel_err_origin_index_list
 
@@ -213,7 +237,6 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         def preprocess_profile(profile):
             profile = np.convolve(profile, conv_a, mode='same')
             profile -= profile[self.w_smooth:-self.w_smooth].min()
-
             profile /= profile.max()
             profile = np.where(profile < 0, 0, profile)
             return profile
@@ -248,17 +271,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         if len(self.tilt_before_list):
             a = self.tilt_before_list[-1]
             b = self.shift_before_list[-1]
-        # da_s, db_s, db_v, x0, x_p, dxt
-        bounds = ([a * 1.0e-4, -1, -image_height, -image_width, 0, 0],
-                  [0, 0, 0, 0, image_height, image_width])
+        # db_v, x0, x_p, dxt
+        bounds = ([-image_height, -image_width, 0, 0],
+                  [0, 0, image_height, image_width])
 
-        def f_free_style_local(t, da_s, db_s, db_v, x0, x_p, dxt):
-            return f_free_style(t, a, b, da_s, db_s, db_v, x0, x_p, dxt)
+        def f_free_style_local(t, db_v, x0, x_p, dxt):
+            return f_free_style_2(t, a, b, db_v, x0, x_p, dxt)
 
         if mode == 'shot':
             popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
-            da_s, db_s, db_v, x0, x_p, dxt = popt
-            approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
+            db_v, x0, x_p, dxt = popt
+            approximation = f_free_style_local(x, db_v, x0, x_p, dxt)
             self.ret = popt
             front = b - approximation
             self.fronts_list.append(front)
@@ -290,8 +313,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 self.ret = popt
             if mode == 'shot':
                 popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
-                da_s, db_s, db_v, x0, x_p, dxt = popt
-                approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
+                db_v, x0, x_p, dxt = popt
+                approximation = f_free_style_local(x, db_v, x0, x_p, dxt)
                 self.ret = popt
                 front = b - approximation
                 expansion = self.compare_approximation_list[0] - approximation
@@ -441,464 +464,6 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             self.shot_half = np.flip(self.shot_half, axis=1)
         self.consider_quart(quart_ind)
 
-    def consider_quart(self, quart_ind):
-        """
-        The function founds action integral vs current density for the quart
-        :param quart_ind:
-        index of quart 0,1,2,3
-        :return:
-        """
-        a_list = []
-        b_list = []
-        opt_list = []
-
-        for i in range(self.framecount):
-            '''
-            consider the quart for each frame
-            '''
-            self.get_center_of_image(self.before_half[i], dialog_name=f'Center of quart {quart_ind} camera {i}')
-            limit = self.center[0]
-            if quart_ind in [0, 3]:
-                self.before_quart = self.before_half[i, :, limit:]
-                self.shot_quart = self.shot_half[i, :, limit:]
-            else:
-                self.before_quart = self.before_half[i, :, :limit]
-                self.before_quart = np.flip(self.before_quart, axis=1)
-                self.shot_quart = self.shot_half[i, :, :limit]
-                self.shot_quart = np.flip(self.shot_quart, axis=1)
-            self.get_end_of_front(self.before_quart, dialog_name=f'End of quart {quart_ind} camera {i}')
-            a, b = self.get_line_regration(self.before_quart, dialog_name=f'Before quart {quart_ind} camera {i}')
-            opt_1 = self.get_sq_line_regration(self.shot_quart, a, b,
-                                               dialog_name=f'Front 1 quart {quart_ind} camera {i}')
-            opt_2 = self.get_sq_line_regration(self.shot_quart, a, b,
-                                               dialog_name=f'Front 2 quart {quart_ind} camera {i}')
-            a_list.append(a)
-            b_list.append(b)
-            opt_list.append(opt_1)
-            opt_list.append(opt_2)
-        popt = np.array(opt_list)
-        # study_range = np.arange(int(popt[:, 0].max()))
-        study_range = np.arange(self.frameheight // 2)
-        polynomes_before_list = []
-        polynomes_shot_list = []
-        for i in range(self.shape[0] * 2):
-            polynome_before = a_list[i % 4] * study_range + b_list[i % 4]
-
-            def my_func_(t):
-                y = f_free_style(t, a_list[i % 4], b_list[i % 4], popt[i, 0], popt[i, 1], popt[i, 2], popt[i, 3],
-                                 popt[i, 4], popt[i, 5])
-                return y
-
-            polynome_shot = my_func_(study_range)
-            polynomes_before_list.append(polynome_before)
-            polynomes_shot_list.append(polynome_shot)
-        main_tilt = a_list[0]
-        # main_shift = polynomes_before_list[0][0]
-        for i in range(self.shape[0] * 2):
-            polynomes_shot_list[i] = polynomes_before_list[i][0] - polynomes_shot_list[i]
-            polynomes_shot_list[i] *= main_tilt / a_list[i % 4]
-            polynomes_before_list[i] = polynomes_before_list[i][0] - polynomes_before_list[i]
-        for poly in polynomes_shot_list:
-            plt.plot(study_range, poly)
-        plt.plot(study_range, polynomes_before_list[0])
-        plt.savefig(f'quart{quart_ind}/0.profiles.png')
-        plt.show()
-
-        polynome_shot_array = np.array(polynomes_shot_list)
-        SSW_dep = polynome_shot_array
-        for i in range(polynome_shot_array.shape[0]):
-            SSW_dep[i] -= polynomes_before_list[0]
-
-        origins_list = []
-        currents_list = []
-        # cross_section_list = []
-        current_density_list = []
-        action_list = []
-        dt_current = np.gradient(self.wf_time).mean()
-        cross_section = self.cross_section(study_range * self.dx)
-        time = self.starts
-        for i, dep in enumerate(SSW_dep.transpose()):
-            try:
-                dep_loc = dep[np.argwhere(dep > 0)[:, 0]]
-                time_loc = time[np.argwhere(dep > 0)[:, 0]]
-                # poly_coef = np.polyfit(self.starts, dep, 1)
-                bounds = ([0, time[0] * 1.0e-2], [1.0e6, time[-1]])
-                popt, pcov = curve_fit(f_square_line_time_reversed, dep_loc, time_loc, bounds=bounds)
-                # popt, pcov = curve_fit(f_square_line_time, time, dep_loc)
-                # poly_coef = popt
-                # t0, b = popt
-                # t0, a, b = popt
-                a, c = popt
-                rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
-                print(c)
-                print(rel_err)
-                rel_err = rel_err[-1] * 100
-                # poly_func = np.poly1d(poly_coef)
-                # time_reg = np.arange(0, self.starts.max(), self.starts.max() / 100.0)
-                dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
-                time_reg = f_square_line_time_reversed(dep_reg, a, c)
-                # dep_reg = poly_func(time_reg)
-                # dep_reg = np.where(dep_reg < 0, 0, dep_reg)
-                # dep_reg = f_square_line_time_reversed(time_reg, a, b, c)
-                origin = c  # -poly_coef[1] / poly_coef[0]
-                current = np.interp(origin, self.wf_time, self.current)
-                current_density = current / cross_section[i] * 1.0e2
-                # if (origin > np.min(self.starts) / 2.718):
-                if (rel_err < 20):
-                    try:
-                        if len(origins_list) > 0:
-                            '''if origin > origins_list[-1]:
-                                continue'''
-                            if origin > self.wf_time[np.argmax(self.current)]:
-                                continue
-
-                            '''if current_density > current_density_list[-1]:
-                                continue'''
-                        origins_list.append(origin)
-                        currents_list.append(current)
-                        current_density_list.append(current_density)
-                        args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= origin))
-                        action = np.sum(self.current[args_to_int] ** 2) * dt_current / cross_section[i] ** 2 * 1.0e-2
-                        action_list.append(action)
-                    except Exception as ex:
-                        print(ex)
-                if i % 10 == 0:
-                    plt.plot(time, dep_loc, 'o')
-                    plt.plot(time_reg, dep_reg)
-                '''if ((rel_err > 30) & (origin > np.min(self.starts) / 2.718)):
-                        plt.plot(self.starts, dep, '-o')
-                        plt.plot(time_reg, dep_reg)'''
-            except Exception as ex:
-                print(ex)
-        current_density_array = np.array(current_density_list)
-        action_array = np.array(action_list)
-        plt.savefig(f'quart{quart_ind}/1.time_reg.png')
-        plt.show()
-        plt.plot(self.wf_time, self.current)
-        plt.plot(origins_list, currents_list, 'o')
-        plt.savefig(f'quart{quart_ind}/2.current.png')
-        plt.show()
-        plt.plot(current_density_array * 1.0e-8, action_array * 1.0e-9, '-o')
-        plt.grid()
-        plt.xlabel('$j, x10^8 A/cm^2$')
-        plt.ylabel('$h, x10^9 A^2s/cm^4$')
-        plt.title('Action integral')
-        plt.savefig(f'quart{quart_ind}/3.action_integral.png')
-        plt.show()
-        action_integral_data = pd.DataFrame({
-            'j_10e8_A/cm^2': current_density_array * 1.0e-8,
-            'h_10e9_A^2*s/cm^4': action_array * 1.0e-9
-        })
-        action_integral_data.to_csv(f'quart{quart_ind}/4.action_integral.csv')
-        self.action_integral_list.append(action_integral_data)
-
-    def get_sq_line_regration(self, image_array, a, b, dialog_name='Front 1'):
-        image_process = image_array[:, :self.end[0]]
-        h_image, w_image = image_process.shape
-        fig, ax = plt.subplots(1, 3)
-        ax[2].set_title(dialog_name)
-        ax[0].imshow(image_process)
-        ax[0].set_title('Raw data')
-        ax[1].set_title('Level')
-        ax[2].imshow(image_process)
-        x_center = np.arange(w_image, dtype='int')
-        b_center = self.center[1]
-        self.b_center = b_center
-        a_center = (self.end[1] - b_center) / w_image
-        y_center = a_center * x_center + b_center
-        self.y_center = y_center.astype(int)
-        # ax[0].plot(x_center, y_center)
-        y_up = y_center - self.w_front
-        y_up = y_up.astype(int)
-        self.y_up = np.where(y_up < 0, 0, y_up)
-        y_down = y_center + self.w_front
-        y_down = y_down.astype(int)
-        self.y_down = np.where(y_down >= h_image, h_image - 1, y_down)
-        self.y_up_plot, = ax[0].plot(x_center, self.y_up)
-        self.y_down_plot, = ax[0].plot(x_center, self.y_down)
-        self.y_center_plot, = ax[0].plot(x_center, self.y_center)
-        # ax[0].plot(x_center, y_down)
-        profiles_values = []
-        # profiles_x = x_center[self.w_smooth:-self.w_smooth]
-        profiles_x = x_center
-        profiles_plots_list = []
-        conv_n = self.w_smooth
-        conv_a = np.ones(conv_n) / float(conv_n)
-        for x in profiles_x:
-            '''try:
-                profile = image_array[self.y_up[x]:self.y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
-            except:'''
-            profile = np.copy(image_array[self.y_up[x]:self.y_down[x], x])
-            profile = np.convolve(profile, conv_a, mode='same')
-            profile -= profile.min()
-            profile /= profile.max()
-            if x % 40 == 0:
-                profiles_plots_list.append(ax[1].plot(np.arange(profile.size), profile)[0])
-            profiles_values.append(profile)
-
-        self.t0_loc = 0
-        self.plot_front, = ax[0].plot(x_center, self.y_center, 'or')
-        self.front_level = 1.0
-        self.plot_level, = ax[1].plot([0, 2 * self.w_front], [1.0, 1.0], '-or')
-        self.plot_poly, = ax[2].plot(x_center, self.y_center, 'r')
-        plt.draw()
-        # da_s, db_s, db_v, x0, x_p, dxt
-        bounds = ([a, -h_image, -h_image, -w_image, 0, 0],
-                  [0, 0, 0, 0, w_image, w_image])
-
-        def mouse_event_scroll(event):
-            if event.inaxes is not None:
-                increment = 1 if event.button == 'up' else -1
-                if event.inaxes.get_title() == 'Raw data':
-                    self.b_center += 5.0 * increment
-                    new_y_center = a_center * x_center + self.b_center
-                    if (np.max(new_y_center) > 0) & (np.min(new_y_center) < h_image):
-                        new_y_center = np.where(new_y_center > 0, new_y_center, 0)
-                        new_y_center = np.where(new_y_center < h_image, new_y_center, h_image - 1)
-                        self.y_center = new_y_center
-                        new_y_up = new_y_center - self.w_front
-                        new_y_up = np.where(new_y_up > 0, new_y_up, 0)
-                        new_y_up = np.where(new_y_up < h_image, new_y_up, h_image - 1)
-                        self.y_up = new_y_up.astype(int)
-                        new_y_down = new_y_center + self.w_front
-                        new_y_down = np.where(new_y_down > 0, new_y_down, 0)
-                        new_y_down = np.where(new_y_down < h_image, new_y_down, h_image - 1)
-                        self.y_down = new_y_down.astype(int)
-                        self.y_center_plot.set_ydata(self.y_center)
-                        self.y_up_plot.set_ydata(self.y_up)
-                        self.y_down_plot.set_ydata(self.y_down)
-                        conv_n = self.w_smooth
-                        conv_a = np.ones(conv_n) / float(conv_n)
-                        for i, x in enumerate(profiles_x):
-                            '''try:
-                                profile = image_array[self.y_up[x]:self.y_down[x],
-                                          x - self.w_smooth:x + self.w_smooth].mean(axis=1)
-                            except:'''
-                            profile = np.copy(image_array[self.y_up[x]:self.y_down[x], x])
-
-                            profile = np.convolve(profile, conv_a, mode='same')
-
-                            # profile = np.abs(np.gradient(profile))
-                            profile -= profile.min()
-                            profile /= profile.max()
-                            if x % 40 == 0:
-                                profiles_plots_list[i // 40].set_data(np.arange(profile.size), profile)
-                            profiles_values[i] = profile
-                        plt.draw()
-                if event.inaxes.get_title() == 'Level':
-                    self.front_level += 0.02 * increment
-                    front_list_x = []
-                    front_list_y = []
-                    for i in range(len(profiles_values)):
-                        try:
-
-                            front_y = np.argwhere(profiles_values[i] > self.front_level).max()
-                            front_y += self.y_up[profiles_x[i]]
-                            front_x = profiles_x[i]
-                            front_list_x.append(front_x)
-                            front_list_y.append(front_y)
-                        except Exception as ex:
-                            pass  # print(ex)
-
-                    def f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt):
-                        return f_free_style(x, a, b, da_s, db_s, db_v, x0, x_p, dxt)
-
-                    popt, perr = curve_fit(f_free_style_local, front_list_x, front_list_y,
-                                           bounds=bounds)
-                    # t0, d, a1, power1, power2 = popt
-                    da_s, db_s, db_v, x0, x_p, dxt = popt
-                    self.optima = popt
-                    # print(popt)
-                    # print(t0)
-                    # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
-                    poly_y = f_free_style_local(x_center, da_s, db_s, db_v, x0, x_p, dxt)
-                    poly_y = np.where(poly_y > 0, poly_y, 0)
-                    poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
-                    self.poly_y = poly_y
-                    self.plot_front.set_data(front_list_x, front_list_y)
-                    self.plot_level.set_ydata([self.front_level, self.front_level])
-                    self.plot_poly.set_ydata(self.poly_y)
-                    plt.draw()
-
-        def mouse_event_front_level(event):
-            x, y = event.xdata, event.ydata
-            front_level = y
-            self.front_level = front_level
-            front_list_x = []
-            front_list_y = []
-            for i in range(len(profiles_values)):
-                try:
-                    front_y = np.argwhere(profiles_values[i] > front_level).max()
-                    front_y += self.y_up[profiles_x[i]]
-                    front_x = profiles_x[i]
-                    front_list_x.append(front_x)
-                    front_list_y.append(front_y)
-                except Exception as ex:
-                    pass  # print(ex)
-
-            def f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt):
-                return f_free_style(x, a, b, da_s, db_s, db_v, x0, x_p, dxt)
-
-            popt, perr = curve_fit(f_free_style_local, front_list_x, front_list_y,
-                                   bounds=bounds)
-            # t0, d, a1, power1, power2 = popt
-            da_s, db_s, db_v, x0, x_p, dxt = popt
-            self.optima = popt
-            # print(popt)
-            # print(t0)
-            # poly_y = f_bipower(x_center, t0, a, b, d, a1, power1, power2)
-            poly_y = f_free_style_local(x_center, da_s, db_s, db_v, x0, x_p, dxt)
-            poly_y = np.where(poly_y > 0, poly_y, 0)
-            poly_y = np.where(poly_y < h_image, poly_y, h_image - 1)
-            self.poly_y = poly_y
-            self.plot_front.set_data(front_list_x, front_list_y)
-            self.plot_level.set_ydata([self.front_level, self.front_level])
-            self.plot_poly.set_ydata(self.poly_y)
-            plt.draw()
-
-        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
-        self.cid1 = fig.canvas.mpl_connect('scroll_event', mouse_event_scroll)
-        plt.tight_layout()
-        figManager = plt.get_current_fig_manager()
-        figManager.window.showMaximized()
-        plt.show()
-        return self.optima
-
-    def get_line_regration(self, image_array, dialog_name='Before'):
-        image_process = image_array[:, :self.end[0]]
-        h_image, w_image = image_process.shape
-        fig, ax = plt.subplots(1, 3)
-        ax[2].set_title(dialog_name)
-        ax[0].imshow(image_process)
-        ax[2].imshow(image_process)
-        x_center = np.arange(w_image, dtype='int')
-        b_center = self.center[1]
-        a_center = (self.end[1] - b_center) / w_image
-        y_center = a_center * x_center + b_center
-        y_center = y_center.astype(int)
-        ax[0].plot(x_center, y_center)
-        y_up = y_center - self.w_front
-        y_up = np.where(y_up < 0, 0, y_up)
-        y_down = y_center + self.w_front
-        y_down = np.where(y_down >= h_image, h_image - 1, y_down)
-        ax[0].plot(x_center, y_up)
-        ax[0].plot(x_center, y_down)
-        profiles_values = []
-        profiles_x = x_center
-        conv_n = self.w_smooth
-        conv_a = np.ones(conv_n) / float(conv_n)
-        for x in profiles_x:
-            '''try:
-                profile = image_array[y_up[x]:y_down[x], x - self.w_smooth:x + self.w_smooth].mean(axis=1)
-            except:'''
-            profile = np.copy(image_array[y_up[x]:y_down[x], x])
-            profile = np.convolve(profile, conv_a, mode='same')
-            profile -= profile.min()
-            profile /= profile.mean()
-            if x % 100 == 5:
-                ax[1].plot(profile)
-            profiles_values.append(profile)
-        plt.draw()
-        self.poly_coef = np.array([a_center, b_center])
-
-        def mouse_event_front_level(event):
-            try:
-                self.plot_front.remove()
-                self.plot_poly.remove()
-                self.plot_level.remove()
-            except Exception as ex:
-                pass
-            x, y = event.xdata, event.ydata
-            front_level = y
-            front_list_x = []
-            front_list_y = []
-            for i in range(len(profiles_values)):
-                try:
-                    front_y = np.argwhere(profiles_values[i] > front_level).max()
-                    front_y += y_up[profiles_x[i]]
-                    front_x = profiles_x[i]
-                    front_list_x.append(front_x)
-                    front_list_y.append(front_y)
-                except Exception as ex:
-                    pass  # print(ex)
-            self.poly_coef = np.polyfit(front_list_x, front_list_y, 1)
-            poly_func = np.poly1d(self.poly_coef)
-            self.tilt_before = self.poly_coef[0]
-            self.shift_before = self.poly_coef[1]
-            self.poly_y = poly_func(x_center)
-
-            self.plot_front, = ax[0].plot(front_list_x, front_list_y, 'or')
-            self.plot_level, = ax[1].plot([0, 2 * self.w_front], [front_level, front_level], '-or')
-            self.plot_poly, = ax[2].plot(x_center, self.poly_y, 'r')
-            plt.draw()
-
-        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_front_level)
-        plt.tight_layout()
-        figManager = plt.get_current_fig_manager()
-        figManager.window.showMaximized()
-        plt.show()
-        return self.poly_coef
-
-    def get_end_of_front(self, image_array, dialog_name='End of quart'):
-        fig = plt.figure()
-        plt.imshow(image_array)
-        plt.title(dialog_name)
-        shape = image_array.shape
-        self.end = [shape[0] - 1, shape[1] - 1]
-
-        def mouse_event_end(event):
-            try:
-                self.annotate.remove()
-                self.arrow.remove()
-            except:
-                pass
-            x, y = event.xdata, event.ydata
-            self.end = [int(x), int(y)]
-            self.annotate = plt.annotate('front end', xy=(x, y), xytext=(x + 100, y + 100),
-                                         arrowprops=dict(facecolor='red', shrink=0.05))
-            self.arrow = plt.arrow(0, self.center[1], x, y - self.center[1])
-            plt.draw()
-
-        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_end)
-        plt.tight_layout()
-        figManager = plt.get_current_fig_manager()
-        figManager.window.showMaximized()
-        plt.show()
-
-    def get_center_of_image(self, image_array, dialog_name='Center'):
-        """
-        the dialog to choose the horizontal center of image
-        :param image_array:
-        the image as a numpy array
-        :param dialog_name:
-        the line with the dialog message
-        :return:
-        (x,y) of the chosen center as integer
-        """
-        fig = plt.figure()
-        plt.imshow(image_array)
-        plt.title(dialog_name)
-        shape = image_array.shape
-        self.center = [shape[0] // 2, shape[1] // 2]
-
-        def mouse_event_center(event):
-            try:
-                self.arrow.remove()
-            except:
-                pass
-            x, y = event.xdata, event.ydata
-            self.center = [int(x), int(y)]
-            self.arrow = plt.annotate('butterfly_waist', xy=(x, y), xytext=(x + 100, y - 100),
-                                      arrowprops=dict(facecolor='red', shrink=0.05))
-            plt.draw()
-
-        self.cid = fig.canvas.mpl_connect('button_press_event', mouse_event_center)
-        plt.tight_layout()
-        figManager = plt.get_current_fig_manager()
-        figManager.window.showMaximized()
-        plt.show()
-        return self.center
-
     def save_all_images(self, name):
         fig, ax = plt.subplots(2, 4)
         fig.set_size_inches(11.7, 8.3)
@@ -940,13 +505,13 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.w_smooth = self.data_dict['info']['Value']['w_smooth']
         self.sequence = np.array(self.data_dict['info']['Value']['Sequence'].split(','), dtype='int')
         # self.shot_name, self.before_array, self.shot_array, self.peak_times, self.wf_time, self.current = open_images()
-        self.before_array = self.data_dict['before']
-        self.shot_array = self.data_dict['shot']
+        self.before_array = np.flip(self.data_dict['before'], axis=0)
+        self.shot_array = np.flip(self.data_dict['shot'], axis=0)
         self.peak_times = self.data_dict['waveform']['peaks']
         self.wf_time = self.data_dict['waveform']['time']
         self.current = self.data_dict['waveform']['current']
         self.starts = self.peak_times[::2]
-        self.starts = self.starts[self.sequence]
+        self.starts = np.flip(self.starts[self.sequence])
         self.stops = self.peak_times[1::2]
 
     def cross_section(self, z):
