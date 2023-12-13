@@ -64,10 +64,11 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         for i in [0, 1, 2, 3]:
             try:
                 df = self.current_action_integral_quart(i)
-                plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
                 action_integral_list.append(df)
             except Exception as ex:
                 print(ex)
+        for df in action_integral_list:
+            plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
         action_integral_df = pd.concat(action_integral_list)
         action_integral_df.to_csv('common/6.action_integral.csv')
         plt.legend()
@@ -86,6 +87,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.popt_front_2_list = []
         self.fronts_list = []
         self.before_front_list = []
+        self.compare_approximation_list = []
+        self.expansion_list = []
         for frame_index in range(self.framecount):
             counter_line = f'Quart {quart_index + 1} Frame {frame_index + 1}'
             left_border_x, left_border_y, right_border_x, right_border_y = self.quart_borders_dialog(
@@ -99,13 +102,71 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
             popt_1 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 1')
             popt_2 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 2')
-            self.popt_front_1_list.append(popt_1)
-            self.popt_front_2_list.append(popt_2)
+            # self.popt_front_1_list.append(popt_1)
+            # self.popt_front_2_list.append(popt_2)
+        origin_list, good_index_list = self.get_origin(self.expansion_list, self.starts)
+        good_origins = np.array(origin_list)[good_index_list]
+        cross_section = self.cross_section(self.study_range * self.dx)[good_index_list]
+        current_list = []
+        current_density_list = []
+        current_action_list = []
+        dt_current = np.gradient(self.wf_time).mean()
+        for i, profile_index in enumerate(good_index_list):
+            current = np.interp(good_origins[i], self.wf_time, self.current)
+            current_list.append(current)
+            current_density = current / cross_section[i] * 1.0e2  # from mm to cm
+            current_density_list.append(current_density)
+            args_to_int = np.argwhere((self.wf_time > 0) & (self.wf_time <= good_origins[i]))
 
-        ret_df = pd.DataFrame()
+            action = np.sum(np.square(self.current[args_to_int])) * dt_current / np.square(
+                cross_section[i]) * 1.0e-2  # from A^2*us*mm^-4 to A^2*s*cm^-4
+            current_action_list.append(action)
+
+        ret_df = pd.DataFrame({
+            'j_10e8_A/cm^2': np.array(current_density_list) * 1.0e-8,
+            'h_10e9_A^2*s/cm^4': np.array(current_action_list) * 1.0e-9
+        })
+        plt.plot(ret_df['j_10e8_A/cm^2'], ret_df['h_10e9_A^2*s/cm^4'], '-o')
+        plt.show()
         return ret_df
 
+    def get_origin(self, expansion_list, starts):
+        expansion_list_length = []
+        for expan in expansion_list:
+            expansion_list_length.append(expan.size)
+        self.study_range = np.arange(min(expansion_list_length))
+        expansion_list_aligned = []
+        for expan in expansion_list:
+            expansion_list_aligned.append(expan[:min(expansion_list_length)])
+        expansion_array = np.array(expansion_list_aligned).transpose()
+        time = starts
+        origins_list = []
+        rel_err_origin_index_list = []
+        for i, dep in enumerate(expansion_array):
+            try:
+                dep_loc = dep[np.argwhere(dep > 0)[:, 0]]
+                time_loc = time[np.argwhere(dep > 0)[:, 0]]
+                bounds = ([0, time[0] * 1.0e-2], [1.0e6, time[-1]])
+                popt, pcov = curve_fit(f_square_line_time_reversed, dep_loc, time_loc, bounds=bounds)
+                a, c = popt
+                rel_err = (np.sqrt(np.abs(np.diag(pcov))) / np.abs(popt))
+                rel_err = rel_err[-1] * 100
+                dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
+                time_reg = f_square_line_time_reversed(dep_reg, a, c)
+                origins_list.append(c)
+                if (rel_err < 20):
+                    rel_err_origin_index_list.append(i)
+                if i % 10 == 0:
+                    plt.plot(time_loc, dep_loc, 'o')
+                    plt.plot(time_reg, dep_reg)
+            except Exception as ex:
+                print(ex)
+        plt.show()
+        return origins_list, rel_err_origin_index_list
+
     def recognize_front_dialog(self, image_array, mode='line', title='front'):
+        if len(self.compare_approximation_list) > 2:
+            self.compare_approximation_list = []
         # fig, ax = plt.subplots(2, 2)
         image_height, image_width = image_array.shape
 
@@ -115,7 +176,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         ax = {
             'Raw data': plt.subplot2grid(shape=shape, loc=(0, 0), rowspan=2),
             'Profiles': plt.subplot2grid(shape=shape, loc=(0, 1)),
-            'Fronts': plt.subplot2grid(shape=shape, loc=(1, 1)),
+            'Expansion': plt.subplot2grid(shape=shape, loc=(1, 1)),
             'Approximation': plt.subplot2grid(shape=shape, loc=(0, 2), rowspan=2),
         }
         for my_key, my_ax in ax.items():
@@ -187,30 +248,32 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         if len(self.tilt_before_list):
             a = self.tilt_before_list[-1]
             b = self.shift_before_list[-1]
-        bounds = ([a, -image_height, -image_height, -image_width, 0, 0],
+        # da_s, db_s, db_v, x0, x_p, dxt
+        bounds = ([a * 1.0e-4, -1, -image_height, -image_width, 0, 0],
                   [0, 0, 0, 0, image_height, image_width])
 
         def f_free_style_local(t, da_s, db_s, db_v, x0, x_p, dxt):
             return f_free_style(t, a, b, da_s, db_s, db_v, x0, x_p, dxt)
 
         if mode == 'shot':
-
             popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
             da_s, db_s, db_v, x0, x_p, dxt = popt
             approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
             self.ret = popt
             front = b - approximation
-            if len(self.fronts_list) > 1:
-                ax['Fronts'].plot(self.fronts_list[-1], '-.')
-                ax['Fronts'].plot(self.fronts_list[-2], '-.')
-            if len(self.tilt_before_list)>1:
-
-
             self.fronts_list.append(front)
-            self.plot_front_before, = ax['Fronts'].plot(-a * x)
 
-        self.plot_front, = ax['Fronts'].plot(front)
+            expansion = self.compare_approximation_list[0] - approximation
+            self.plot_expansion, = ax['Expansion'].plot(expansion)
+            for expans in self.expansion_list:
+                ax['Expansion'].plot(expans, '-.')
+            self.expansion_list.append(expansion)
+
+        # self.plot_expansion, = ax['Expansion'].plot(front)
         self.plot_approximation, = ax['Approximation'].plot(approximation, 'r')
+        for appr in self.compare_approximation_list:
+            ax['Approximation'].plot(appr, '-.')
+        self.compare_approximation_list.append(approximation)
 
         def refresh():
             for index in x:
@@ -231,10 +294,12 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 approximation = f_free_style_local(x, da_s, db_s, db_v, x0, x_p, dxt)
                 self.ret = popt
                 front = b - approximation
+                expansion = self.compare_approximation_list[0] - approximation
+                self.expansion_list[-1] = expansion
                 self.fronts_list[-1] = front
+                self.plot_expansion.set_ydata(expansion)
+            self.compare_approximation_list[-1] = approximation
 
-            self.plot_front.set_ydata(front)
-            self.plot_approximation
             self.plot_approximation.set_ydata(approximation)
             plot_streak_center.set_data(x, self.y)
             plot_streak_up.set_data(x, self.y_up)
@@ -261,7 +326,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 y_up = np.where(y_up < 0, 0, y_up)
                 self.y_up = y_up
             if event.inaxes.get_ylabel() == 'Profiles':
-                level = self.level + increment * 5.0e-2
+                level = self.level + increment * 1.0e-2
                 if (level > 0) & (level < 1.0):
                     self.level = level
             refresh()
@@ -343,10 +408,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         ret_shot = np.copy(self.shot_array)
         if quart_index in [2, 3]:
             ret_before = np.flip(ret_before, axis=1)
-            ret_shot = np.flip(ret_before, axis=1)
+            ret_shot = np.flip(ret_shot, axis=1)
         if quart_index in [1, 2]:
             ret_before = np.flip(ret_before, axis=2)
-            ret_shot = np.flip(ret_before, axis=2)
+            ret_shot = np.flip(ret_shot, axis=2)
         limit = self.framewidth // 2
         ret_before = ret_before[:, :limit]
         ret_shot = ret_shot[:, :limit]
