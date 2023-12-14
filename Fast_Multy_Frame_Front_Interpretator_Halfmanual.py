@@ -243,8 +243,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.ylabel('relative error, %')
         plt.xlabel('profile number')
         plt.title('Relative error')
-        plt.savefig(f'quart_{self.quart_index}/Relative_error.png')
         plt.plot(rel_err_list)
+        plt.savefig(f'quart_{self.quart_index}/Relative_error.png')
         plt.show()
         return origins_list, rel_err_origin_index_list
 
