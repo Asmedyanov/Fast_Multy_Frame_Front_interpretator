@@ -59,7 +59,7 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     sinc_volt = np.abs(np.gradient(waveform['Volts.1']))
     if sinc_volt.max() < 10.0 * sinc_volt.mean():
         sinc_volt = np.abs(np.gradient(waveform['Volts.2']))
-    peaks = find_peaks(sinc_volt[:sinc_volt.size // 2], prominence=0.02,distance=50)[0]
+    peaks = find_peaks(sinc_volt[:sinc_volt.size // 2], prominence=0.02, distance=50)[0]
     peaks = peaks[-16:]
     peak_times = sinc_time[peaks]
     current_volt = waveform['Volts'].values
@@ -76,8 +76,8 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     zero_ind = np.argwhere(current_time < 0).max()
     noise = current_amp[:zero_ind]
     current_amp -= noise.mean()
-    noise_ample = np.abs(noise-noise.min())
-    current_start = np.argwhere(np.abs(current_amp) > 0.8*np.max(noise_ample)).min()
+    noise_ample = np.abs(noise - noise.min())
+    current_start = np.argwhere(np.abs(current_amp) > 0.8 * np.max(noise_ample)).min()
     main_shift = current_time[current_start]
     peak_times -= main_shift
     current_time -= main_shift
@@ -104,7 +104,8 @@ def open_folder():
     :return:
     dict of data
     """
-    folder_name = filedialog.askdirectory(initialdir='C:/Users/User/Butterfly_processing/Nikita_Processing/multiframe')
+    folder_name = filedialog.askdirectory(
+        initialdir='C:/Users/User/OneDrive - Technion/UEWE/Foils/Butterfly/multiframe')
     current_dir = os.curdir
     os.chdir(folder_name)
     files_data = dict()

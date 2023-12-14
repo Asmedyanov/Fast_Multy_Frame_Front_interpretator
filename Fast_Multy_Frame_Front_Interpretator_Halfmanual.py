@@ -12,6 +12,7 @@ from scipy.fft import fft2, ifft2
 from scipy.ndimage.filters import maximum_filter
 import cv2
 from scipy.ndimage.morphology import generate_binary_structure, binary_erosion
+import sys
 
 from ApproxFunc import *
 
@@ -24,6 +25,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
     def __init__(self, *args, **kwargs):
         """The class which includes the main data processing"""
         self.data_dict = open_folder()
+        self.curdir = os.curdir
         self.sort_data_dict()
         self.image_preprocessing()
         self.current_action_integral_processing()
@@ -63,10 +65,11 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         action_integral_list = []
         for i in [0, 1, 2, 3]:
             try:
-                df = self.current_action_integral_quart(i)
+                self.quart_index = i
+                df = self.current_action_integral_quart()
                 action_integral_list.append(df)
-            except Exception as ex:
-                print(ex)
+            except Exception as e:
+                print('Error on line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
         for df in action_integral_list:
             plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
         action_integral_df = pd.concat(action_integral_list)
@@ -74,13 +77,14 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.legend()
         plt.grid()
         plt.title('Action integral')
-        plt.xlabel('$j, 10^{8} A/cm^2$')
-        plt.ylabel('$h, 10^{9} A^{2}s/cm^4$')
+        plt.xlabel('$j, 10^8 \\times A/cm^2$')
+        plt.ylabel('$h, 10^9 \\times A^{2}s/cm^4$')
         plt.savefig('common/6.action_integral.png')
         plt.show()
 
-    def current_action_integral_quart(self, quart_index):
-        quart_image_array_before, quart_image_array_shot = self.quart_flip(quart_index)
+    def current_action_integral_quart(self):
+        quart_image_array_before, quart_image_array_shot = self.quart_flip(self.quart_index)
+
         self.tilt_before_list = []
         self.shift_before_list = []
         self.popt_front_1_list = []
@@ -89,21 +93,56 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.before_front_list = []
         self.compare_approximation_list = []
         self.expansion_list = []
+        self.levels_list = []
+        self.left_border_x_list = []
+        self.left_border_y_list = []
+        self.right_border_x_list = []
+        self.right_border_y_list = []
+        self.streak_shift_list = []
+
+        quart_line = f'quart_{self.quart_index}'
+        os.makedirs(quart_line, exist_ok=True)
+        self.mode = 'hard'
+        try:
+            self.df_approximation_ref = pd.read_csv(f'{quart_line}/approximation_parameters.csv')
+            self.df_borders_ref = pd.read_csv(f'{quart_line}/frame_borders.csv')
+            self.mode = 'ref'
+            print('Ref mode')
+        except:
+            pass
+
+        # os.chdir(f'quart_{quart_index}')
+        self.front_index = 0
         for frame_index in range(self.framecount):
-            counter_line = f'Quart {quart_index + 1} Frame {frame_index + 1}'
+            self.frame_index = frame_index
+            counter_line = f'Quart {self.quart_index + 1} Frame {frame_index + 1}'
             left_border_x, left_border_y, right_border_x, right_border_y = self.quart_borders_dialog(
                 quart_image_array_before[frame_index],
                 dialog_name=f'{counter_line} left&right')
             image_before = quart_image_array_before[frame_index, :, left_border_x:right_border_x]
             image_shot = quart_image_array_shot[frame_index, :, left_border_x:right_border_x]
             tilt_before, shift_before = self.recognize_front_dialog(image_before, title=f'{counter_line} before line')
+
             self.tilt_before_list.append(tilt_before)
             self.shift_before_list.append(shift_before)
 
             popt_1 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 1')
+
             popt_2 = self.recognize_front_dialog(image_shot, mode='shot', title=f'{counter_line} front 2')
             # self.popt_front_1_list.append(popt_1)
             # self.popt_front_2_list.append(popt_2)
+        df_approximation = pd.DataFrame({
+            'level': self.levels_list,
+            'shift': self.streak_shift_list
+        })
+        df_borders = pd.DataFrame({
+            'left_x': self.left_border_x_list,
+            'left_y': self.left_border_y_list,
+            'right_x': self.right_border_x_list,
+            'right_y': self.right_border_y_list
+        })
+        df_approximation.to_csv(f'{quart_line}/approximation_parameters.csv')
+        df_borders.to_csv(f'{quart_line}/frame_borders.csv')
         origin_list, good_index_list = self.get_origin(self.expansion_list, self.starts)
         good_origins = np.array(origin_list)
         cross_section = self.cross_section(self.study_range * self.dx)[good_index_list]
@@ -121,13 +160,27 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             action = np.sum(np.square(self.current[args_to_int])) * dt_current / np.square(
                 cross_section[i]) * 1.0e-2  # from A^2*us*mm^-4 to A^2*s*cm^-4
             current_action_list.append(action)
+        # report about current
+        plt.plot(good_origins, np.array(current_list) * 1.0e-5, 'o')
+        plt.plot(self.wf_time, self.current * 1.0e-5)
+        plt.title(f'Explosion current quart {self.quart_index}')
+        plt.ylabel('$I, 10^5 \\times A$')
+        plt.xlabel('$t, \mu s$')
+        plt.savefig(f'{quart_line}/Explosion_current_{quart_line}.png')
+        plt.clf()
 
+        # report about action integral
         ret_df = pd.DataFrame({
             'j_10e8_A/cm^2': np.array(current_density_list) * 1.0e-8,
             'h_10e9_A^2*s/cm^4': np.array(current_action_list) * 1.0e-9
         })
         plt.plot(ret_df['j_10e8_A/cm^2'], ret_df['h_10e9_A^2*s/cm^4'], '-o')
+        plt.title(f'Action integral quart {self.quart_index}')
+        plt.xlabel('$j, 10^8 \\times A/cm^2$')
+        plt.ylabel('$h, 10^9 \\times A^{2}s/cm^4$')
+        plt.savefig(f'{quart_line}/Action_integral_{quart_line}.png')
         plt.show()
+        ret_df.to_csv(f'{quart_line}/action_integral.csv')
         return ret_df
 
     def get_origin(self, expansion_list, starts):
@@ -170,10 +223,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 a, c = popt
                 dep_reg = np.arange(0, dep.max(), dep.max() * 1.0e-3)
                 time_reg = f_square_line_time_reversed(dep_reg, a, c)
-                rel_err = np.sqrt(np.square(f_square_line_time_reversed(dep_loc, a, c) / time_loc - 1).mean())
+                rel_err = np.sqrt(np.square(f_square_line_time_reversed(dep_loc, a, c) / time_loc - 1).mean()) * 100
                 rel_err_list.append(rel_err)
 
-                if (rel_err < 0.2):
+                if (rel_err < 20):
                     rel_err_origin_index_list.append(i)
                     origins_list.append(c)
                 if (i % 20 == 0):
@@ -182,8 +235,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
             except Exception as ex:
                 print(ex)
-
+        plt.ylabel('expansion, pix')
+        plt.xlabel('$t, \mu s$')
+        plt.title('Origin approximation')
+        plt.savefig(f'quart_{self.quart_index}/Origin approximation.png')
         plt.show()
+        plt.ylabel('relative error, %')
+        plt.xlabel('profile number')
+        plt.title('Relative error')
+        plt.savefig(f'quart_{self.quart_index}/Relative_error.png')
         plt.plot(rel_err_list)
         plt.show()
         return origins_list, rel_err_origin_index_list
@@ -213,6 +273,9 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         x = np.arange(image_width, dtype=int)
         streak_tilt = (self.right_border_y - self.left_border_y) / image_width
         self.streak_shift = self.left_border_y
+        self.level = 0.5
+        if self.mode == 'ref':
+            some_index, self.level, self.streak_shift = self.df_approximation_ref.iloc[self.front_index].values
         y = (streak_tilt * x + self.streak_shift).astype(int)
         y = np.where(y >= image_height, image_height - 1, y)
         y = np.where(y < 0, 0, y)
@@ -226,7 +289,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plot_streak_center, = ax['Raw data'].plot(x, y)
         plot_streak_up, = ax['Raw data'].plot(x, y_up)
         plot_streak_down, = ax['Raw data'].plot(x, y_down)
-        self.level = 0.5
+
         plot_level, = ax['Profiles'].plot([0, 2.0 * self.w_front],
                                           [self.level, self.level], '-or')
         profiles_list = []
@@ -255,7 +318,6 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         if mode == 'line':
             popt, pcov = curve_fit(f_line, x, front_points_list)
             approximation = popt[0] * x + popt[1]
-            front = popt[1] - approximation
             self.ret = popt
             if len(self.before_front_list):
                 l1 = approximation.size
@@ -266,6 +328,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 p2 = np.array([xp, self.before_front_list[0][:l]]).transpose()
                 self.homography, mask = cv2.findHomography(p2, p1, cv2.RANSAC)
             self.before_front_list.append(approximation)
+        self.levels_list.append(self.level)
+        self.streak_shift_list.append(self.streak_shift)
         a = -1
         b = 100
         if len(self.tilt_before_list):
@@ -332,12 +396,15 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 plot.set_data(np.arange(profile.size), profile)
             plot_front_points.set_data(np.arange(len(front_points_list)), front_points_list)
             plot_level.set_ydata([self.level, self.level])
+            plt.savefig(f'quart_{self.quart_index}/front_approximation.png')
+
             plt.draw()
 
         def mouse_event_scroll(event):
             increment = 1 if event.button == 'up' else -1
             if event.inaxes.get_ylabel() == 'Raw data':
                 self.streak_shift += increment * 10
+                self.streak_shift_list[-1] = self.streak_shift
                 y = (streak_tilt * x + self.streak_shift).astype(int)
                 y = np.where(y >= image_height, image_height - 1, y)
                 y = np.where(y < 0, 0, y)
@@ -352,6 +419,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 level = self.level + increment * 1.0e-2
                 if (level > 0) & (level < 1.0):
                     self.level = level
+                    self.levels_list[-1] = self.level
             refresh()
 
         self.cid = fig.canvas.mpl_connect('scroll_event', mouse_event_scroll)
@@ -360,6 +428,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         figManager.window.showMaximized()
         plt.tight_layout()
         plt.show()
+        self.front_index += 1
         return self.ret
 
     def quart_borders_dialog(self, image_array, dialog_name='Choose the line along the considering front'):
@@ -374,6 +443,10 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 """
         self.left_border_x, self.right_border_x = self.frameheight // 2, self.frameheight - 5
         self.left_border_y, self.right_border_y = self.framewidth // 2 - 5, 0
+        if self.mode == 'ref':
+            some_index, self.left_border_x, self.left_border_y, self.right_border_x, self.right_border_y = \
+                self.df_borders_ref.iloc[
+                    self.frame_index].values
         try:
             fig = plt.figure()
             plt.imshow(image_array)
@@ -409,6 +482,11 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             plt.show()
         except Exception as ex:
             print(f'quart_borders_dialog {ex}')
+        self.left_border_x_list.append(self.left_border_x)
+        self.left_border_y_list.append(self.left_border_y)
+        self.right_border_x_list.append(self.right_border_x)
+        self.right_border_y_list.append(self.right_border_y)
+
         return int(self.left_border_x), int(self.left_border_y), \
                int(self.right_border_x), int(self.right_border_y)
 
@@ -439,30 +517,6 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         ret_before = ret_before[:, :limit]
         ret_shot = ret_shot[:, :limit]
         return ret_before, ret_shot
-
-    def consider_half(self, quart_ind):
-        """
-        the function considers the half of each of 8 frames which includes the quart
-        :param quart_ind: the number of considering quart
-        """
-
-        os.makedirs(f'quart{quart_ind}', exist_ok=True)
-        limit = self.framewidth // 2
-        if quart_ind in [0, 1]:
-            """
-            for the quarts i don't need a reflection. i just cut
-            """
-            self.before_half = self.before_array[:, :limit]
-            self.shot_half = self.shot_array[:, :limit]
-        else:
-            """
-            for the quarts i need to reflect and cut
-            """
-            self.before_half = self.before_array[:, limit:]
-            self.before_half = np.flip(self.before_half, axis=1)
-            self.shot_half = self.shot_array[:, limit:]
-            self.shot_half = np.flip(self.shot_half, axis=1)
-        self.consider_quart(quart_ind)
 
     def save_all_images(self, name):
         fig, ax = plt.subplots(2, 4)
