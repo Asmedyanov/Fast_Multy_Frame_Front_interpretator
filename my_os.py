@@ -55,6 +55,13 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     }
     """
     waveform = pd.read_csv(fname)
+    '''plt.plot(1.0e6*waveform['s'],waveform['Volts']/np.abs(waveform['Volts']).max(),label='Current')
+    plt.plot(1.0e6*waveform['s.1'],waveform['Volts.1']/np.abs(waveform['Volts.1']).max(),label='Main trig')
+    plt.plot(1.0e6*waveform['s.2'],waveform['Volts.2']/np.abs(waveform['Volts.2']).max(),label='4Quick trig')
+    plt.plot(1.0e6*waveform['s.3'],waveform['Volts.3']/np.abs(waveform['Volts.3']).max(),label='Tektronix')
+    plt.xlabel('t, us')
+    plt.legend()
+    plt.show()'''
     sinc_time = waveform['s.1'].values * 1.0e6
     sinc_volt = np.abs(np.gradient(waveform['Volts.1']))
     if sinc_volt.max() < 10.0 * sinc_volt.mean():
@@ -81,11 +88,11 @@ def open_csv(fname, Rogovski_ampl, Rogovski_conv):
     main_shift = current_time[current_start]
     peak_times -= main_shift
     current_time -= main_shift
-    '''plt.plot(current_time, current_amp/current_amp.max())
+    plt.plot(current_time, current_amp/current_amp.max())
     plt.plot(sinc_time, sinc_volt/sinc_volt.max())
     plt.plot(sinc_time[peaks], sinc_volt[peaks]/sinc_volt.max(),'o')
     plt.plot(peak_times, current_amp[peaks]/current_amp.max(),'o')
-    plt.show()'''
+    plt.show()
     ret = {
         'time': current_time,
         'current': current_amp,

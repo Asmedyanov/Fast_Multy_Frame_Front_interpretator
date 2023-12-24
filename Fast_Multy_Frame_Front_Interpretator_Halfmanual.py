@@ -70,7 +70,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 action_integral_list.append(df)
             except Exception as e:
                 print('Error on line {}'.format(sys.exc_info()[-1].tb_lineno), type(e).__name__, e)
-        for df in action_integral_list:
+        for i, df in enumerate(action_integral_list):
             plt.plot(df['j_10e8_A/cm^2'], df['h_10e9_A^2*s/cm^4'], '-o', label=f'quart {i}')
         action_integral_df = pd.concat(action_integral_list)
         action_integral_df.to_csv('common/6.action_integral.csv')
@@ -196,6 +196,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         origins_list = []
         rel_err_origin_index_list = []
         rel_err_list = []
+        velocity_list = []
         for i, dep in enumerate(expansion_array):
             try:
                 df_dep = pd.DataFrame(
@@ -229,22 +230,31 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 if (rel_err < 20):
                     rel_err_origin_index_list.append(i)
                     origins_list.append(c)
+                    velocity_list.append(self.dx/a)
                 if (i % 20 == 0):
-                    plt.plot(time_loc, dep_loc, 'o')
-                    plt.plot(time_reg, dep_reg)
+                    plt.plot(time_loc, dep_loc * self.dx, 'o')
+                    plt.plot(time_reg, dep_reg * self.dx)
 
             except Exception as ex:
                 print(ex)
-        plt.ylabel('expansion, pix')
+        plt.ylabel('expansion, mm')
         plt.xlabel('$t, \mu s$')
         plt.title('Origin approximation')
         plt.savefig(f'quart_{self.quart_index}/Origin approximation.png')
+        plt.show()
+        plt.plot(velocity_list)
+        plt.ylabel('Velosity, km/s')
+        plt.xlabel('x, pix')
+        plt.title('Velocity approximation')
+        plt.savefig(f'quart_{self.quart_index}/Velocity approximation.png')
         plt.show()
         plt.ylabel('relative error, %')
         plt.xlabel('profile number')
         plt.title('Relative error')
         plt.plot(rel_err_list)
         plt.savefig(f'quart_{self.quart_index}/Relative_error.png')
+        plt.show()
+        plt.plot(origins_list)
         plt.show()
         return origins_list, rel_err_origin_index_list
 
@@ -260,7 +270,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         ax = {
             'Raw data': plt.subplot2grid(shape=shape, loc=(0, 0), rowspan=2),
             'Profiles': plt.subplot2grid(shape=shape, loc=(0, 1)),
-            'Expansion': plt.subplot2grid(shape=shape, loc=(1, 1)),
+            'Expansion, mm': plt.subplot2grid(shape=shape, loc=(1, 1)),
             'Approximation': plt.subplot2grid(shape=shape, loc=(0, 2), rowspan=2),
         }
         for my_key, my_ax in ax.items():
@@ -346,17 +356,17 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
             popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
             db_v, x0, x_p, dxt = popt
             approximation = f_free_style_local(x, db_v, x0, x_p, dxt)
+            '''popt, pcov = curve_fit(f_line, x, front_points_list)
+            approximation = popt[0] * x + popt[1]'''
             self.ret = popt
-            front = b - approximation
-            self.fronts_list.append(front)
 
             expansion = self.compare_approximation_list[0] - approximation
-            self.plot_expansion, = ax['Expansion'].plot(expansion)
+            self.plot_expansion, = ax['Expansion, mm'].plot(x * self.dx, expansion * self.dx)
             for expans in self.expansion_list:
-                ax['Expansion'].plot(expans, '-.')
+                ax['Expansion, mm'].plot(np.arange(expans.size) * self.dx, expans * self.dx, '-.')
             self.expansion_list.append(expansion)
 
-        # self.plot_expansion, = ax['Expansion'].plot(front)
+        # self.plot_expansion, = ax['Expansion, mm'].plot(front)
         self.plot_approximation, = ax['Approximation'].plot(approximation, 'r')
         for appr in self.compare_approximation_list:
             ax['Approximation'].plot(appr, '-.')
@@ -379,12 +389,13 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 popt, pcov = curve_fit(f_free_style_local, x, front_points_list, bounds=bounds)
                 db_v, x0, x_p, dxt = popt
                 approximation = f_free_style_local(x, db_v, x0, x_p, dxt)
+                '''popt, pcov = curve_fit(f_line, x, front_points_list)
+                approximation = popt[0] * x + popt[1]'''
                 self.ret = popt
-                front = b - approximation
                 expansion = self.compare_approximation_list[0] - approximation
                 self.expansion_list[-1] = expansion
-                self.fronts_list[-1] = front
-                self.plot_expansion.set_ydata(expansion)
+                # self.fronts_list[-1] = front
+                self.plot_expansion.set_data(x * self.dx, expansion * self.dx)
             self.compare_approximation_list[-1] = approximation
 
             self.plot_approximation.set_ydata(approximation)
@@ -523,7 +534,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         fig.set_size_inches(11.7, 8.3)
         for i in range(4):
             ax[0, i].imshow(self.before_array[i])
-            ax[0, i].set_title(f'from {int(self.starts[i] * 1000)} ns to {int(self.stops[i] * 1000)} ns')
+            ax[0, i].set_title(f'shutters {int(self.starts[::2][i] * 1000)} ns and {int(self.starts[1::2][i] * 1000)} ns')
             ax[1, i].imshow(self.shot_array[i])
         plt.tight_layout()
         fig.savefig(name)
