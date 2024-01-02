@@ -62,6 +62,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
 
     def current_action_integral_processing(self):
         # separated processing by quarts
+
         action_integral_list = []
         for i in [0, 1, 2, 3]:
             try:
@@ -81,6 +82,27 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.ylabel('$h, 10^9 \\times A^{2}s/cm^4$')
         plt.savefig('common/6.action_integral.png')
         plt.show()
+
+        import originpro as op
+        op.new()
+        path = os.getcwd()
+        save_name = path + '\\CAI_OriginLab.opju'
+        b = op.save(save_name)
+        waveform_sheet = op.new_sheet(lname='Waveform')
+        waveform_df=pd.DataFrame({
+            'time': self.wf_time,
+            'Current': self.current
+        })
+        waveform_sheet.from_df(waveform_df)
+        action_sheet_list = []
+        for i in range(len(action_integral_list)):
+            action_sheet_list.append(
+                op.new_sheet(lname=f'CAI_Quart{i}')
+            )
+            action_sheet_list[-1].from_df(action_integral_list[i])
+        op.save()
+        op.exit()
+
 
     def current_action_integral_quart(self):
         quart_image_array_before, quart_image_array_shot = self.quart_flip(self.quart_index)
