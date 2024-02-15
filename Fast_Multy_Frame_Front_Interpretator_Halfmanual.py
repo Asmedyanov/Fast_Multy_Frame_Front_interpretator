@@ -59,6 +59,24 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.shot_array = np.swapaxes(self.shot_array, 1, 2)
 
         self.save_all_images('common/5.swapped.png')
+        self.demonstration_for_paper('common/for_paper.png')
+
+    def demonstration_for_paper(self, name):
+        plt.rcParams["font.family"] = "Times New Roman"
+        #plt.rcParams["font.size"] = 20
+        fig, ax = plt.subplots(ncols=4)
+        fig.set_size_inches(11.7, 8.3)
+        image_to_show = (1.0-self.before_array) + self.shot_array
+        for i in range(4):
+            ax[4-i-1].set_title(
+                f'{int(self.starts[1::2][i] * 1000)} & {int(self.starts[::2][i] * 1000)} ns')
+            ax[4-i-1].imshow(image_to_show[i], cmap='gray', vmin=0.7, vmax=1.05,
+                         extent=[0,
+                                 self.frameheight * self.dx,
+                                 self.framewidth * self.dx, 0])
+        plt.tight_layout()
+        fig.savefig(name)
+        plt.show()
 
     def current_action_integral_processing(self):
         # separated processing by quarts
@@ -89,20 +107,54 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         save_name = path + '\\CAI_OriginLab.opju'
         b = op.save(save_name)
         waveform_sheet = op.new_sheet(lname='Waveform')
-        waveform_df=pd.DataFrame({
+
+        waveform_df = pd.DataFrame({
             'time': self.wf_time,
-            'Current': self.current
+            'time_power': self.wf_time_power,
+            'Current': self.current * 1.0e-3,
+            'Resistance': self.resistance * 1.0e3,
+            'U_res': self.u_res * 1.0e-3,
+            'Power/mass': self.power * 1.0e-10 / self.mass,
+            'Energy/mass': self.energy / self.mass * 1.0e-4
         })
         waveform_sheet.from_df(waveform_df)
+
+        waveform_graph = op.new_graph(template='Waveform_butterfly', lname='Waveform')
+        # waveform_graph = op.new_graph(template='3Ys_Y-YY', lname='Waveform')
+        waveform_graph[0].add_plot(waveform_sheet, coly=2, colx=0, type='line')
+        waveform_graph[0].set_xlim(begin=0, end=self.wf_time.max())
+        waveform_graph[0].set_ylim(begin=0, end=waveform_df['Current'].max())
+        # waveform_graph.add_layer()
+        waveform_graph[1].add_plot(waveform_sheet, coly=3, colx=1, type='line')
+        waveform_graph[1].set_xlim(begin=0, end=self.wf_time_power.max())
+        waveform_graph[1].set_ylim(begin=0, end=waveform_df['Resistance'].max())
+
+        waveform_graph[2].add_plot(waveform_sheet, coly=4, colx=1, type='line')
+        waveform_graph[2].set_xlim(begin=0, end=self.wf_time_power.max())
+        waveform_graph[2].set_ylim(begin=0, end=waveform_df['U_res'].max())
+        # waveform_graph.add_layer()
+        energy_graph = op.new_graph(template='Energy_butterfly', lname='Energy')
+        energy_graph[0].add_plot(waveform_sheet, coly=5, colx=1, type='line')
+        energy_graph[0].set_xlim(begin=0, end=self.wf_time_power.max())
+        energy_graph[0].set_ylim(begin=0, end=waveform_df['Power/mass'].max())
+
+        energy_graph[1].add_plot(waveform_sheet, coly=6, colx=1, type='line')
+        energy_graph[1].set_xlim(begin=0, end=self.wf_time_power.max())
+        energy_graph[1].set_ylim(begin=0, end=waveform_df['Energy/mass'].max())
+
         action_sheet_list = []
+        action_graph = op.new_graph(template='CAI_Butterfly', lname='CAI')
+
+        action_graph[0].label('CAI')
         for i in range(len(action_integral_list)):
             action_sheet_list.append(
-                op.new_sheet(lname=f'CAI_Quart{i}')
+                op.new_sheet(lname=f'CAI_Quart_{i}')
             )
             action_sheet_list[-1].from_df(action_integral_list[i])
+            action_graph[0].add_plot(action_sheet_list[-1], colx=0, coly=1)
+        action_graph[0].rescale()
         op.save()
         op.exit()
-
 
     def current_action_integral_quart(self):
         quart_image_array_before, quart_image_array_shot = self.quart_flip(self.quart_index)
@@ -168,6 +220,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         origin_list, good_index_list = self.get_origin(self.expansion_list, self.starts)
         good_origins = np.array(origin_list)
         cross_section = self.cross_section(self.study_range * self.dx)[good_index_list]
+        foil_width=cross_section/self.h_foil
         current_list = []
         current_density_list = []
         current_action_list = []
@@ -190,6 +243,12 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.xlabel('$t, \mu s$')
         plt.savefig(f'{quart_line}/Explosion_current_{quart_line}.png')
         plt.clf()
+        plt.plot(foil_width,good_origins)
+        plt.ylabel('t_exp, us')
+        plt.xlabel('w, mm')
+        plt.grid()
+        plt.savefig(f'{quart_line}/t_exp_vs_width_{quart_line}.png')
+        plt.clf()
 
         # report about action integral
         ret_df = pd.DataFrame({
@@ -201,7 +260,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.xlabel('$j, 10^8 \\times A/cm^2$')
         plt.ylabel('$h, 10^9 \\times A^{2}s/cm^4$')
         plt.savefig(f'{quart_line}/Action_integral_{quart_line}.png')
-        plt.show()
+        # plt.show()
+        plt.close()
         ret_df.to_csv(f'{quart_line}/action_integral.csv')
         return ret_df
 
@@ -252,7 +312,7 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
                 if (rel_err < 20):
                     rel_err_origin_index_list.append(i)
                     origins_list.append(c)
-                    velocity_list.append(self.dx/a)
+                    velocity_list.append(self.dx / a)
                 if (i % 20 == 0):
                     plt.plot(time_loc, dep_loc * self.dx, 'o')
                     plt.plot(time_reg, dep_reg * self.dx)
@@ -263,21 +323,25 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         plt.xlabel('$t, \mu s$')
         plt.title('Origin approximation')
         plt.savefig(f'quart_{self.quart_index}/Origin approximation.png')
-        plt.show()
+        # plt.show()
+        plt.close()
         plt.plot(velocity_list)
         plt.ylabel('Velosity, km/s')
         plt.xlabel('x, pix')
         plt.title('Velocity approximation')
         plt.savefig(f'quart_{self.quart_index}/Velocity approximation.png')
-        plt.show()
+        # plt.show()
+        plt.close()
         plt.ylabel('relative error, %')
         plt.xlabel('profile number')
         plt.title('Relative error')
         plt.plot(rel_err_list)
         plt.savefig(f'quart_{self.quart_index}/Relative_error.png')
-        plt.show()
+        # plt.show()
+        plt.close()
         plt.plot(origins_list)
-        plt.show()
+        # plt.show()
+        plt.close()
         return origins_list, rel_err_origin_index_list
 
     def recognize_front_dialog(self, image_array, mode='line', title='front'):
@@ -556,7 +620,8 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         fig.set_size_inches(11.7, 8.3)
         for i in range(4):
             ax[0, i].imshow(self.before_array[i])
-            ax[0, i].set_title(f'shutters {int(self.starts[::2][i] * 1000)} ns and {int(self.starts[1::2][i] * 1000)} ns')
+            ax[0, i].set_title(
+                f'shutters {int(self.starts[::2][i] * 1000)} ns and {int(self.starts[1::2][i] * 1000)} ns')
             ax[1, i].imshow(self.shot_array[i])
         plt.tight_layout()
         fig.savefig(name)
@@ -591,12 +656,19 @@ class Fast_Multy_Frame_Front_Interpretator_Halfmanual:
         self.w_front = self.data_dict['info']['Value']['w_front']
         self.w_smooth = self.data_dict['info']['Value']['w_smooth']
         self.sequence = np.array(self.data_dict['info']['Value']['Sequence'].split(','), dtype='int')
+        self.density = self.data_dict['info']['Value']['Density']
+        self.mass = self.density * self.h_foil * self.l_foil * 0.5 * (self.w_foil + self.waist) * 1.0e-3
         # self.shot_name, self.before_array, self.shot_array, self.peak_times, self.wf_time, self.current = open_images()
         self.before_array = np.flip(self.data_dict['before'], axis=0)
         self.shot_array = np.flip(self.data_dict['shot'], axis=0)
         self.peak_times = self.data_dict['waveform']['peaks']
         self.wf_time = self.data_dict['waveform']['time']
+        self.wf_time_power = self.data_dict['waveform']['time_power']
         self.current = self.data_dict['waveform']['current']
+        self.power = self.data_dict['waveform']['power']
+        self.resistance = self.data_dict['waveform']['resistance']
+        self.u_res = self.data_dict['waveform']['u_resistive']
+        self.energy = self.data_dict['waveform']['energy']
         self.starts = self.peak_times[::2]
         self.starts = np.flip(self.starts[self.sequence])
         self.stops = self.peak_times[1::2]
